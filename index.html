@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="轻卡速查" />
+  <meta name="theme-color" content="#F2F2F7" id="theme-color-meta" />
+  <title>轻卡速查 · iOS 食物热量表</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icon.svg" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- 顶部灵动岛风格 Toast -->
+    <div id="toast" class="ios-toast" role="status" aria-live="polite"></div>
+
+    <!-- iPhone Safari 添加到主屏幕提示条 -->
+    <div id="install-banner" class="install-banner hidden">
+      <div class="install-banner-text">
+        <strong>📲 添加到 iPhone 主屏幕</strong>
+        <span>点击 Safari 底部「分享」→「添加到主屏幕」，获得原生 App 体验</span>
+      </div>
+      <button id="close-install-banner" class="icon-btn-sm" aria-label="关闭提示">✕</button>
+    </div>
+
+    <!-- ==================== 视图 1：速查 ==================== -->
+    <main id="view-lookup" class="view active">
+      <header class="ios-header">
+        <div class="header-top-row">
+          <h1 class="large-title">热量速查</h1>
+          <div class="header-actions">
+            <button id="btn-legend" class="header-pill-btn" title="红绿灯说明">🚦 说明</button>
+            <button id="btn-theme" class="header-icon-btn" title="切换浅色/深色模式" aria-label="切换主题">🌓</button>
+          </div>
+        </div>
+
+        <!-- 原生风格搜索框 -->
+        <div class="search-bar-wrap">
+          <div class="ios-search-bar">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+              id="search-input"
+              type="search"
+              placeholder="搜食物名、拼音，如 鸡蛋 / naicha / 鸡胸肉"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+            />
+            <button id="search-clear" class="search-clear hidden" aria-label="清空搜索">✕</button>
+          </div>
+        </div>
+
+        <!-- 分类横向滚动胶囊 -->
+        <div id="category-tabs" class="category-scroll" role="tablist"></div>
+
+        <!-- 筛选与单位切换栏 -->
+        <div class="toolbar-row">
+          <div class="level-filters" id="level-filters">
+            <button class="level-chip active" data-level="all">全部</button>
+            <button class="level-chip" data-level="green"><span class="dot dot-green"></span>低卡</button>
+            <button class="level-chip" data-level="yellow"><span class="dot dot-yellow"></span>适中</button>
+            <button class="level-chip" data-level="red"><span class="dot dot-red"></span>高卡</button>
+          </div>
+
+          <div class="segmented-control" id="unit-toggle" role="group" aria-label="显示单位">
+            <button class="seg-btn active" data-mode="100g">每100g</button>
+            <button class="seg-btn" data-mode="unit">常见份</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="content-scroll">
+        <div class="list-meta-row">
+          <span id="result-count">共 0 种食物</span>
+          <span class="meta-hint">点击查看营养素与换算</span>
+        </div>
+        <div id="food-list" class="ios-inset-list"></div>
+        <div id="lookup-empty" class="empty-state hidden">
+          <div class="empty-emoji">🔍</div>
+          <h3>没找到相关食物</h3>
+          <p>试试换个关键词，如“米饭”、“鸡胸”、“奶茶”或清除红绿灯筛选</p>
+          <button id="btn-reset-filters" class="ios-btn-secondary">重置全部筛选</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- ==================== 视图 2：收藏 ==================== -->
+    <main id="view-favorites" class="view">
+      <header class="ios-header">
+        <div class="header-top-row">
+          <h1 class="large-title">常用收藏</h1>
+          <div class="segmented-control" id="fav-unit-toggle" role="group" aria-label="收藏显示单位">
+            <button class="seg-btn active" data-mode="100g">每100g</button>
+            <button class="seg-btn" data-mode="unit">常见份</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="content-scroll">
+        <div id="favorites-list" class="ios-inset-list"></div>
+        <div id="favorites-empty" class="empty-state hidden">
+          <div class="empty-emoji">❤️</div>
+          <h3>还没有收藏食物</h3>
+          <p>在速查页点开常吃的食物，点击右上角红心即可加入收藏夹，方便下次一秒查找</p>
+          <button id="btn-go-lookup" class="ios-btn-primary">去逛逛食物库</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- ==================== 视图 3：今日餐盘 ==================== -->
+    <main id="view-plate" class="view">
+      <header class="ios-header">
+        <div class="header-top-row">
+          <h1 class="large-title">今日餐盘</h1>
+          <div class="header-actions">
+            <button id="btn-edit-goal" class="header-pill-btn">🎯 目标</button>
+            <button id="btn-clear-plate" class="header-pill-btn danger">清空</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="content-scroll">
+        <!-- 今日热量总览卡片 -->
+        <div class="ios-card summary-card">
+          <div class="summary-top">
+            <div class="ring-wrap">
+              <svg class="progress-ring" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="50"></circle>
+                <circle id="ring-progress" class="ring-fill" cx="60" cy="60" r="50"></circle>
+              </svg>
+              <div class="ring-center">
+                <span id="plate-total-kcal" class="ring-kcal">0</span>
+                <span class="ring-unit">kcal</span>
+              </div>
+            </div>
+
+            <div class="summary-stats">
+              <div class="stat-row">
+                <span class="stat-label">每日目标</span>
+                <button id="summary-goal-btn" class="stat-val-link">1800 kcal ✎</button>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label" id="remain-label">还可摄入</span>
+                <span class="stat-val" id="plate-remain-kcal">1800 kcal</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">已记录项</span>
+                <span class="stat-val" id="plate-item-count">0 项</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 今日三大营养素 -->
+          <div class="macro-summary">
+            <div class="macro-bar-track">
+              <div id="plate-bar-carbs" class="macro-seg carbs" style="width: 33%"></div>
+              <div id="plate-bar-protein" class="macro-seg protein" style="width: 33%"></div>
+              <div id="plate-bar-fat" class="macro-seg fat" style="width: 34%"></div>
+            </div>
+            <div class="macro-legend">
+              <div class="macro-col">
+                <span class="macro-dot carbs"></span>
+                <span class="macro-name">碳水</span>
+                <strong id="plate-total-carbs">0g</strong>
+              </div>
+              <div class="macro-col">
+                <span class="macro-dot protein"></span>
+                <span class="macro-name">蛋白质</span>
+                <strong id="plate-total-protein">0g</strong>
+              </div>
+              <div class="macro-col">
+                <span class="macro-dot fat"></span>
+                <span class="macro-name">脂肪</span>
+                <strong id="plate-total-fat">0g</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 按餐次分组列表 -->
+        <div id="plate-meals-container"></div>
+
+        <div id="plate-empty" class="empty-state hidden">
+          <div class="empty-emoji">🍽️</div>
+          <h3>今日餐盘还是空的</h3>
+          <p>在速查页点击食物右侧的「+」或进入详情页，即可按份量累加今日摄入热量</p>
+          <button id="btn-plate-go-lookup" class="ios-btn-primary">去添加食物</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- ==================== 底部 iOS Tab Bar ==================== -->
+    <nav class="ios-tab-bar" role="navigation" aria-label="主导航">
+      <button class="tab-item active" data-tab="lookup">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span class="tab-label">速查</span>
+      </button>
+
+      <button class="tab-item" data-tab="favorites">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+        </svg>
+        <span class="tab-label">收藏</span>
+        <span id="badge-favorites" class="tab-badge hidden">0</span>
+      </button>
+
+      <button class="tab-item" data-tab="plate">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a10 10 0 1 0 10 10H12V2z"></path>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        <span class="tab-label">今日餐盘</span>
+        <span id="badge-plate" class="tab-badge hidden">0</span>
+      </button>
+    </nav>
+
+    <!-- ==================== 食物详情 Bottom Sheet ==================== -->
+    <div id="detail-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
+    <div id="detail-sheet" class="ios-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="sheet-food-name">
+      <div class="sheet-grabber-wrap" id="sheet-grabber">
+        <div class="sheet-grabber"></div>
+      </div>
+
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span id="sheet-emoji" class="sheet-emoji">🍚</span>
+          <div>
+            <h2 id="sheet-food-name" class="sheet-title">白米饭（蒸）</h2>
+            <div class="sheet-subtitle-row">
+              <span id="sheet-level-badge" class="level-badge yellow">🟡 黄灯适中</span>
+              <span id="sheet-base-info" class="sheet-base-info">116 kcal / 100g</span>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-header-actions">
+          <button id="sheet-fav-btn" class="circle-icon-btn" aria-label="收藏食物">🤍</button>
+          <button id="sheet-close-btn" class="circle-icon-btn close" aria-label="关闭">✕</button>
+        </div>
+      </div>
+
+      <div class="sheet-body">
+        <!-- 实时热量大卡显示 -->
+        <div class="sheet-kcal-hero">
+          <div class="hero-kcal-num">
+            <span id="sheet-calc-kcal">174</span>
+            <small>kcal</small>
+          </div>
+          <div id="sheet-calc-weight" class="hero-weight">1小碗（约 150g）</div>
+        </div>
+
+        <!-- 计量模式切换 -->
+        <div class="segmented-control full-width" id="sheet-mode-toggle">
+          <button class="seg-btn active" data-mode="unit" id="sheet-mode-unit-btn">常见份量</button>
+          <button class="seg-btn" data-mode="gram">按克数 (g)</button>
+        </div>
+
+        <!-- 份量调节器 -->
+        <div class="stepper-card">
+          <button id="btn-step-minus" class="stepper-btn" aria-label="减少">−</button>
+          <div class="stepper-display">
+            <input id="sheet-amount-input" type="number" inputmode="decimal" min="0.1" step="0.5" value="1" />
+            <span id="sheet-amount-unit">份</span>
+          </div>
+          <button id="btn-step-plus" class="stepper-btn" aria-label="增加">+</button>
+        </div>
+
+        <!-- 快捷份量按钮 -->
+        <div id="sheet-quick-picks" class="quick-picks"></div>
+
+        <!-- 三大营养素详情 -->
+        <div class="sheet-section-title">营养素估算</div>
+        <div class="macro-cards-grid">
+          <div class="macro-mini-card carbs">
+            <span class="macro-mini-label">碳水化合物</span>
+            <strong id="sheet-carbs">38.9g</strong>
+            <small id="sheet-carbs-pct">89%</small>
+          </div>
+          <div class="macro-mini-card protein">
+            <span class="macro-mini-label">蛋白质</span>
+            <strong id="sheet-protein">3.9g</strong>
+            <small id="sheet-protein-pct">9%</small>
+          </div>
+          <div class="macro-mini-card fat">
+            <span class="macro-mini-label">脂肪</span>
+            <strong id="sheet-fat">0.5g</strong>
+            <small id="sheet-fat-pct">2%</small>
+          </div>
+        </div>
+
+        <div class="macro-bar-track sheet-bar">
+          <div id="sheet-bar-carbs" class="macro-seg carbs" style="width: 89%"></div>
+          <div id="sheet-bar-protein" class="macro-seg protein" style="width: 9%"></div>
+          <div id="sheet-bar-fat" class="macro-seg fat" style="width: 2%"></div>
+        </div>
+
+        <!-- 营养小贴士 -->
+        <div class="tip-box">
+          <span class="tip-icon">💡</span>
+          <p id="sheet-tip">日常基础碳水来源，搭配蔬菜与蛋白质可平稳餐后血糖。</p>
+        </div>
+      </div>
+
+      <!-- 底部加入餐盘区 -->
+      <div class="sheet-footer">
+        <div class="meal-picker" id="sheet-meal-picker">
+          <button class="meal-chip active" data-meal="breakfast">🌅 早餐</button>
+          <button class="meal-chip" data-meal="lunch">☀️ 午餐</button>
+          <button class="meal-chip" data-meal="dinner">🌙 晚餐</button>
+          <button class="meal-chip" data-meal="snack">🍪 加餐</button>
+        </div>
+        <button id="sheet-add-plate-btn" class="ios-btn-primary full-width">
+          加入今日餐盘（+<span id="sheet-add-kcal">174</span> kcal）
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== 弹窗：红绿灯说明 & 目标设置 ==================== -->
+    <div id="modal-backdrop" class="modal-backdrop hidden">
+      <div id="modal-dialog" class="ios-alert-modal">
+        <h3 id="modal-title">红绿灯热量分级说明</h3>
+        <div id="modal-content" class="modal-content"></div>
+        <div id="modal-actions" class="modal-actions"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

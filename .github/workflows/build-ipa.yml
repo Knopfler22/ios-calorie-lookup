@@ -1,0 +1,61 @@
+name: Build iOS Sideload IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen & librsvg
+        run: brew install xcodegen librsvg
+
+      - name: Sync web assets into iOS bundle
+        run: |
+          mkdir -p ios/QingKaLookup/web
+          cp index.html styles.css data.js app.js icon.svg ios/QingKaLookup/web/
+
+      - name: Render 1024x1024 AppIcon PNG from icon.svg
+        run: |
+          rsvg-convert -w 1024 -h 1024 icon.svg \
+            -o ios/QingKaLookup/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build unsigned Release .app
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project QingKaLookup.xcodeproj \
+            -scheme QingKaLookup \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned .ipa for sideloading
+        working-directory: ios
+        run: |
+          mkdir -p dist/Payload
+          cp -R build/Build/Products/Release-iphoneos/QingKaLookup.app dist/Payload/
+          cd dist
+          zip -qry ../QingKaLookup.ipa Payload
+          ls -lh ../QingKaLookup.ipa
+
+      - name: Upload QingKaLookup.ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QingKaLookup-iOS-IPA
+          path: ios/QingKaLookup.ipa
+          retention-days: 30

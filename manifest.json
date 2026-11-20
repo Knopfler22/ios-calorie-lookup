@@ -1,0 +1,18 @@
+{
+  "name": "轻卡速查 - 食物热量表",
+  "short_name": "轻卡速查",
+  "description": "iOS 风格食物热量与营养素速查表，支持份量换算、红绿灯分级、收藏夹与今日餐盘计算",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F2F2F7",
+  "theme_color": "#F2F2F7",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
