@@ -33,12 +33,13 @@
         <div class="header-top-row">
           <h1 class="large-title">热量速查</h1>
           <div class="header-actions">
-            <button id="btn-legend" class="header-pill-btn" title="红绿灯说明">🚦 说明</button>
+            <button id="btn-add-custom" class="header-pill-btn primary-tint" title="添加未知食物">＋ 添加</button>
+            <button id="btn-legend" class="header-icon-btn" title="红绿灯说明" aria-label="红绿灯说明">🚦</button>
             <button id="btn-theme" class="header-icon-btn" title="切换浅色/深色模式" aria-label="切换主题">🌓</button>
           </div>
         </div>
 
-        <!-- 原生风格搜索框 -->
+        <!-- 原生风格搜索框 + 拍照识图入口 -->
         <div class="search-bar-wrap">
           <div class="ios-search-bar">
             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -48,12 +49,18 @@
             <input
               id="search-input"
               type="search"
-              placeholder="搜食物名、拼音，如 鸡蛋 / naicha / 鸡胸肉"
+              placeholder="搜食物/品牌/场景，如 瑞幸、麦当劳、高蛋白"
               autocomplete="off"
               autocorrect="off"
               spellcheck="false"
             />
             <button id="search-clear" class="search-clear hidden" aria-label="清空搜索">✕</button>
+            <button id="btn-open-camera" class="search-camera-btn" title="拍照识别食物" aria-label="拍照识别食物">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -79,14 +86,18 @@
       <section class="content-scroll">
         <div class="list-meta-row">
           <span id="result-count">共 0 种食物</span>
-          <span class="meta-hint">点击查看营养素与换算</span>
+          <span class="meta-hint">支持空格多词检索 · 点右上角可自建食物</span>
         </div>
         <div id="food-list" class="ios-inset-list"></div>
         <div id="lookup-empty" class="empty-state hidden">
           <div class="empty-emoji">🔍</div>
-          <h3>没找到相关食物</h3>
-          <p>试试换个关键词，如“米饭”、“鸡胸”、“奶茶”或清除红绿灯筛选</p>
-          <button id="btn-reset-filters" class="ios-btn-secondary">重置全部筛选</button>
+          <h3>食物库里还没收录它</h3>
+          <p>可以自己动手补充到食物库，或者直接拍照让 AI 估算热量</p>
+          <div class="empty-actions">
+            <button id="btn-empty-add-custom" class="ios-btn-primary">＋ 添加到我的食物库</button>
+            <button id="btn-empty-camera" class="ios-btn-secondary">📷 拍照识别</button>
+            <button id="btn-reset-filters" class="ios-btn-secondary">重置筛选</button>
+          </div>
         </div>
       </section>
     </main>
@@ -120,6 +131,7 @@
         <div class="header-top-row">
           <h1 class="large-title">今日餐盘</h1>
           <div class="header-actions">
+            <button id="btn-plate-camera" class="header-pill-btn primary-tint">📷 拍一餐</button>
             <button id="btn-edit-goal" class="header-pill-btn">🎯 目标</button>
             <button id="btn-clear-plate" class="header-pill-btn danger">清空</button>
           </div>
@@ -190,7 +202,7 @@
         <div id="plate-empty" class="empty-state hidden">
           <div class="empty-emoji">🍽️</div>
           <h3>今日餐盘还是空的</h3>
-          <p>在速查页点击食物右侧的「+」或进入详情页，即可按份量累加今日摄入热量</p>
+          <p>在速查页点击食物右侧「+」、详情页或用右上角「📷 拍一餐」，即可累加今日摄入热量</p>
           <button id="btn-plate-go-lookup" class="ios-btn-primary">去添加食物</button>
         </div>
       </section>
@@ -224,7 +236,7 @@
       </button>
     </nav>
 
-    <!-- ==================== 食物详情 Bottom Sheet ==================== -->
+    <!-- ==================== Sheet 1：食物详情 ==================== -->
     <div id="detail-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
     <div id="detail-sheet" class="ios-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="sheet-food-name">
       <div class="sheet-grabber-wrap" id="sheet-grabber">
@@ -238,18 +250,20 @@
             <h2 id="sheet-food-name" class="sheet-title">白米饭（蒸）</h2>
             <div class="sheet-subtitle-row">
               <span id="sheet-level-badge" class="level-badge yellow">🟡 黄灯适中</span>
+              <span id="sheet-custom-badge" class="custom-badge hidden">自定义</span>
               <span id="sheet-base-info" class="sheet-base-info">116 kcal / 100g</span>
             </div>
           </div>
         </div>
         <div class="sheet-header-actions">
+          <button id="sheet-edit-btn" class="circle-icon-btn hidden" title="编辑自定义食物" aria-label="编辑">✎</button>
+          <button id="sheet-delete-btn" class="circle-icon-btn hidden danger-icon" title="删除自定义食物" aria-label="删除">🗑️</button>
           <button id="sheet-fav-btn" class="circle-icon-btn" aria-label="收藏食物">🤍</button>
           <button id="sheet-close-btn" class="circle-icon-btn close" aria-label="关闭">✕</button>
         </div>
       </div>
 
       <div class="sheet-body">
-        <!-- 实时热量大卡显示 -->
         <div class="sheet-kcal-hero">
           <div class="hero-kcal-num">
             <span id="sheet-calc-kcal">174</span>
@@ -258,13 +272,11 @@
           <div id="sheet-calc-weight" class="hero-weight">1小碗（约 150g）</div>
         </div>
 
-        <!-- 计量模式切换 -->
         <div class="segmented-control full-width" id="sheet-mode-toggle">
           <button class="seg-btn active" data-mode="unit" id="sheet-mode-unit-btn">常见份量</button>
           <button class="seg-btn" data-mode="gram">按克数 (g)</button>
         </div>
 
-        <!-- 份量调节器 -->
         <div class="stepper-card">
           <button id="btn-step-minus" class="stepper-btn" aria-label="减少">−</button>
           <div class="stepper-display">
@@ -274,10 +286,8 @@
           <button id="btn-step-plus" class="stepper-btn" aria-label="增加">+</button>
         </div>
 
-        <!-- 快捷份量按钮 -->
         <div id="sheet-quick-picks" class="quick-picks"></div>
 
-        <!-- 三大营养素详情 -->
         <div class="sheet-section-title">营养素估算</div>
         <div class="macro-cards-grid">
           <div class="macro-mini-card carbs">
@@ -303,14 +313,12 @@
           <div id="sheet-bar-fat" class="macro-seg fat" style="width: 2%"></div>
         </div>
 
-        <!-- 营养小贴士 -->
         <div class="tip-box">
           <span class="tip-icon">💡</span>
           <p id="sheet-tip">日常基础碳水来源，搭配蔬菜与蛋白质可平稳餐后血糖。</p>
         </div>
       </div>
 
-      <!-- 底部加入餐盘区 -->
       <div class="sheet-footer">
         <div class="meal-picker" id="sheet-meal-picker">
           <button class="meal-chip active" data-meal="breakfast">🌅 早餐</button>
@@ -321,6 +329,230 @@
         <button id="sheet-add-plate-btn" class="ios-btn-primary full-width">
           加入今日餐盘（+<span id="sheet-add-kcal">174</span> kcal）
         </button>
+      </div>
+    </div>
+
+    <!-- ==================== Sheet 2：添加/编辑未知食物 ==================== -->
+    <div id="custom-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
+    <div id="custom-sheet" class="ios-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="custom-sheet-title">
+      <div class="sheet-grabber-wrap" id="custom-grabber">
+        <div class="sheet-grabber"></div>
+      </div>
+
+      <div class="sheet-header">
+        <h2 id="custom-sheet-title" class="sheet-title">补充未知食物</h2>
+        <button id="custom-close-btn" class="circle-icon-btn close" aria-label="关闭">✕</button>
+      </div>
+
+      <form id="custom-food-form" class="sheet-body form-body">
+        <input type="hidden" id="cf-id" />
+
+        <div class="form-group">
+          <label class="form-label">选择图标</label>
+          <div id="cf-emoji-picker" class="emoji-picker-grid"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="cf-name">食物名称 <span class="req">*</span></label>
+          <input id="cf-name" class="ios-input" type="text" placeholder="例如：家楼下牛肉面、瑞幸生酪拿铁" required maxlength="30" />
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label" for="cf-category">所属分类</label>
+            <select id="cf-category" class="ios-input"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cf-kcal">热量 (kcal/100g) <span class="req">*</span></label>
+            <input id="cf-kcal" class="ios-input" type="number" inputmode="decimal" min="0" max="1000" step="1" placeholder="如 180" required />
+          </div>
+        </div>
+
+        <div class="form-row-3">
+          <div class="form-group">
+            <label class="form-label" for="cf-carbs">碳水 (g)</label>
+            <input id="cf-carbs" class="ios-input" type="number" inputmode="decimal" min="0" max="100" step="0.1" placeholder="选填" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cf-protein">蛋白 (g)</label>
+            <input id="cf-protein" class="ios-input" type="number" inputmode="decimal" min="0" max="100" step="0.1" placeholder="选填" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cf-fat">脂肪 (g)</label>
+            <input id="cf-fat" class="ios-input" type="number" inputmode="decimal" min="0" max="100" step="0.1" placeholder="选填" />
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label" for="cf-unit-name">常见份量名称</label>
+            <input id="cf-unit-name" class="ios-input" type="text" placeholder="如 1碗 / 1杯 / 1个" value="1份" maxlength="16" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="cf-unit-grams">单份约重 (g)</label>
+            <input id="cf-unit-grams" class="ios-input" type="number" inputmode="numeric" min="1" max="3000" step="1" value="100" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="cf-tip">备注 / 控卡小贴士（选填）</label>
+          <input id="cf-tip" class="ios-input" type="text" placeholder="例如：配料表标注热量，少放酱更低卡" maxlength="80" />
+        </div>
+      </form>
+
+      <div class="sheet-footer">
+        <button id="cf-submit-btn" type="submit" form="custom-food-form" class="ios-btn-primary full-width">
+          保存到我的食物库
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== Sheet 3：📷 拍照识别食物 ==================== -->
+    <div id="camera-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
+    <div id="camera-sheet" class="ios-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="camera-sheet-title">
+      <div class="sheet-grabber-wrap" id="camera-grabber">
+        <div class="sheet-grabber"></div>
+      </div>
+
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="sheet-emoji">📷</span>
+          <div>
+            <h2 id="camera-sheet-title" class="sheet-title">拍照识别食物</h2>
+            <div class="sheet-subtitle-row">
+              <span id="ai-status-pill" class="sheet-base-info">AI 视觉估算热量与营养素</span>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-header-actions">
+          <button id="btn-toggle-ai-config" class="circle-icon-btn" title="AI 接口设置" aria-label="AI设置">⚙️</button>
+          <button id="camera-close-btn" class="circle-icon-btn close" aria-label="关闭">✕</button>
+        </div>
+      </div>
+
+      <div class="sheet-body">
+        <!-- 可折叠 AI 识别接口设置面板 -->
+        <div id="ai-config-panel" class="ai-config-panel hidden">
+          <div class="ai-config-head">
+            <strong>🤖 AI 视觉模型配置（仅存本地设备）</strong>
+            <span class="ai-config-sub">支持 Gemini（免费额度高）或任意 OpenAI 兼容视觉模型</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="ai-provider">识别服务商</label>
+            <select id="ai-provider" class="ios-input">
+              <option value="gemini">Google Gemini（推荐 · gemini-2.5-flash）</option>
+              <option value="openai">OpenAI 兼容接口（通义千问 / 智谱 / 硅基流动 / GPT）</option>
+            </select>
+          </div>
+
+          <div id="ai-openai-fields" class="hidden">
+            <div class="form-group">
+              <label class="form-label" for="ai-base-url">API Base URL</label>
+              <input id="ai-base-url" class="ios-input" type="url" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ai-model">视觉模型名称</label>
+              <input id="ai-model" class="ios-input" type="text" placeholder="qwen-vl-plus / gpt-4o-mini / glm-4v-flash" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="ai-api-key">API Key</label>
+            <input id="ai-api-key" class="ios-input" type="password" placeholder="粘贴你的 API Key（保存在本机）" autocomplete="off" />
+          </div>
+
+          <button id="btn-save-ai-config" type="button" class="ios-btn-primary full-width">保存识别配置</button>
+        </div>
+
+        <!-- 隐藏的原生文件/相机选择器 -->
+        <input id="camera-capture-input" type="file" accept="image/*" capture="environment" class="hidden" />
+        <input id="camera-gallery-input" type="file" accept="image/*" class="hidden" />
+
+        <!-- 拍照/选图按钮区 -->
+        <div class="camera-actions-grid">
+          <button id="btn-take-photo" type="button" class="camera-action-card primary">
+            <span class="cam-big-icon">📸</span>
+            <strong>立即拍照</strong>
+            <small>调用 iPhone 相机</small>
+          </button>
+          <button id="btn-pick-gallery" type="button" class="camera-action-card">
+            <span class="cam-big-icon">🖼️</span>
+            <strong>相册选图</strong>
+            <small>选择已有美食照片</small>
+          </button>
+        </div>
+
+        <!-- 图片预览区 -->
+        <div id="camera-preview-wrap" class="camera-preview-wrap hidden">
+          <img id="camera-preview-img" alt="食物照片预览" />
+          <div id="camera-scanning-overlay" class="scanning-overlay hidden">
+            <div class="scan-line"></div>
+            <div class="scan-text">AI 正在识别食物并估算热量...</div>
+          </div>
+        </div>
+
+        <!-- 未配置 Key 提示 -->
+        <div id="camera-no-key-tip" class="tip-box hidden" style="margin-top:12px;">
+          <span class="tip-icon">🔑</span>
+          <div>
+            <strong>尚未配置 AI Key</strong>：点击右上角 <strong>⚙️</strong> 填入免费 Gemini API Key（或通义千问 / 智谱 / OpenAI 兼容 Key）即可开启拍照自动识别；也可直接点下方手动入库。
+          </div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div id="camera-error-box" class="error-box hidden"></div>
+
+        <!-- AI 识别结果卡片 -->
+        <div id="camera-result-card" class="ai-result-card hidden">
+          <div class="ai-res-header">
+            <div class="ai-res-title-row">
+              <span id="ai-res-emoji" class="ai-res-emoji">🍽️</span>
+              <div>
+                <h3 id="ai-res-name">识别结果</h3>
+                <div class="ai-res-sub">
+                  <span id="ai-res-level" class="level-badge yellow">🟡 适中</span>
+                  <span id="ai-res-portion">约 1份 (250g)</span>
+                </div>
+              </div>
+            </div>
+            <div class="ai-res-kcal-box">
+              <strong id="ai-res-total-kcal">350</strong>
+              <small>kcal</small>
+            </div>
+          </div>
+
+          <div class="macro-cards-grid" style="margin-top:12px;">
+            <div class="macro-mini-card carbs">
+              <span class="macro-mini-label">本份碳水</span>
+              <strong id="ai-res-carbs">0g</strong>
+            </div>
+            <div class="macro-mini-card protein">
+              <span class="macro-mini-label">本份蛋白</span>
+              <strong id="ai-res-protein">0g</strong>
+            </div>
+            <div class="macro-mini-card fat">
+              <span class="macro-mini-label">本份脂肪</span>
+              <strong id="ai-res-fat">0g</strong>
+            </div>
+          </div>
+
+          <div class="tip-box" style="margin-top:10px;">
+            <span class="tip-icon">🤖</span>
+            <p id="ai-res-tip"></p>
+          </div>
+
+          <div class="ai-res-btns">
+            <button id="btn-ai-add-plate" type="button" class="ios-btn-primary">🍽️ 加入今日餐盘</button>
+            <button id="btn-ai-save-custom" type="button" class="ios-btn-secondary">💾 存入食物库</button>
+          </div>
+
+          <!-- 本地库相似匹配 -->
+          <div id="ai-local-matches" class="ai-local-matches hidden">
+            <div class="sheet-section-title" style="margin-top:14px;">本地食物库相似参考</div>
+            <div id="ai-local-matches-list" class="ios-inset-list"></div>
+          </div>
+        </div>
       </div>
     </div>
 
