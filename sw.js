@@ -1,8 +1,9 @@
-const CACHE_NAME = 'ios-calorie-lookup-v3';
+const CACHE_NAME = 'ios-calorie-lookup-v4';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './china_food_db.js',
   './data.js',
   './app.js',
   './manifest.json',

@@ -19,7 +19,7 @@ jobs:
       - name: Sync web assets into iOS bundle
         run: |
           mkdir -p ios/QingKaLookup/web
-          cp index.html styles.css data.js app.js icon.svg ios/QingKaLookup/web/
+          cp index.html styles.css china_food_db.js data.js app.js icon.svg ios/QingKaLookup/web/
 
       - name: Render 1024x1024 AppIcon PNG from icon.svg
         run: |

@@ -468,12 +468,15 @@
       .replace(/"/g, '&quot;');
   }
 
-  // 增强检索：支持多关键词空格分词 + 名称/别名/品牌/分类/小贴士/自定义标签全字段搜索
+  // 增强检索：支持多关键词空格分词 + 名称/别名/品牌/分类/国标编码全字段搜索 + 相关度排序
+  let lookupDisplayLimit = 60;
+  let lastFilteredFoods = [];
+
   function getFilteredFoods() {
     const rawQ = state.searchQuery.trim().toLowerCase();
     const tokens = rawQ ? rawQ.split(/\s+/).filter(Boolean) : [];
 
-    return getAllFoods().filter((food) => {
+    const matched = getAllFoods().filter((food) => {
       if (state.category !== 'all' && food.category !== state.category) return false;
       if (state.levelFilter !== 'all' && getCalorieLevel(food.kcal).key !== state.levelFilter) return false;
       if (tokens.length > 0) {
@@ -490,10 +493,27 @@
       }
       return true;
     });
+
+    if (tokens.length > 0) {
+      matched.sort((a, b) => {
+        const an = a.name.toLowerCase();
+        const bn = b.name.toLowerCase();
+        const aExact = an === rawQ ? 100 : (an.startsWith(rawQ) ? 50 : (an.includes(rawQ) ? 20 : 0));
+        const bExact = bn === rawQ ? 100 : (bn.startsWith(rawQ) ? 50 : (bn.includes(rawQ) ? 20 : 0));
+        const aBonus = a.isCustom ? 15 : (a.isStandard ? 0 : 8);
+        const bBonus = b.isCustom ? 15 : (b.isStandard ? 0 : 8);
+        return (bExact + bBonus) - (aExact + aBonus);
+      });
+    }
+
+    return matched;
   }
 
-  function renderLookupList() {
+  function renderLookupList(resetLimit = true) {
+    if (resetLimit) lookupDisplayLimit = 60;
     const foods = getFilteredFoods();
+    lastFilteredFoods = foods;
+
     const customCount = state.customFoods.length;
     dom.resultCount.textContent = customCount > 0
       ? `共 ${foods.length} 种食物（含 ${customCount} 种自定义）`
@@ -511,7 +531,13 @@
 
     dom.lookupEmpty.classList.add('hidden');
     dom.foodList.classList.remove('hidden');
-    dom.foodList.innerHTML = foods.map((f) => createFoodRowHTML(f, 'lookup')).join('');
+
+    const visible = foods.slice(0, lookupDisplayLimit);
+    const remain = foods.length - visible.length;
+    const moreHTML = remain > 0
+      ? `<button type="button" class="load-more-btn" data-load-more="1">显示更多（还有 ${remain} 种）</button>`
+      : '';
+    dom.foodList.innerHTML = visible.map((f) => createFoodRowHTML(f, 'lookup')).join('') + moreHTML;
   }
 
   // ==================== 渲染：收藏列表 ====================
@@ -1895,10 +1921,17 @@
       });
     });
 
-    // 列表点击（含左滑操作与 AI 本地相似列表）
+    // 列表点击（含左滑操作、加载更多与 AI 本地相似列表）
     [dom.foodList, dom.favoritesList, dom.aiLocalMatchesList].forEach((listEl) => {
       listEl.addEventListener('click', (e) => {
         if (Date.now() < swipeSuppressClickUntil) return;
+
+        const moreBtn = e.target.closest('[data-load-more]');
+        if (moreBtn) {
+          lookupDisplayLimit += 80;
+          renderLookupList(false);
+          return;
+        }
 
         const unfavBtn = e.target.closest('[data-swipe-unfav]');
         if (unfavBtn) {

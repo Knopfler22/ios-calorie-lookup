@@ -295,3 +295,29 @@ const FOOD_DATABASE = [
   f('popsicle', '老冰棍 / 绿豆冰棒', 'laobinggun bingbang 雪糕 零食', 'snack', '🍧', 98, 24.0, 0.5, 0.2, '1支', 75, '几乎零脂肪，一支仅约 74 kcal，夏日解暑无压力。'),
   f('protein-bar', '低糖蛋白棒', 'danbaibang 健身 减脂 零食 高蛋白', 'snack', '🍫', 355, 32.0, 30.0, 11.5, '1根', 50, '1 根约 178 kcal 含 15g 蛋白，加班或运动前后垫肚子很方便。')
 ];
+
+// ==================== 融合《中国食物成分表标准版(第6版)》全量国标库 ====================
+if (typeof CHINA_FOOD_COMP_RAW !== 'undefined' && Array.isArray(CHINA_FOOD_COMP_RAW)) {
+  const existingNames = new Set(FOOD_DATABASE.map((x) => x.name.trim()));
+  for (let i = 0; i < CHINA_FOOD_COMP_RAW.length; i++) {
+    const row = CHINA_FOOD_COMP_RAW[i];
+    const [code, name, category, emoji, kcal, carbs, protein, fat, sublabel, tip] = row;
+    if (!name || existingNames.has(name.trim())) continue;
+    existingNames.add(name.trim());
+    FOOD_DATABASE.push({
+      id: `cfcd_${code}`,
+      name,
+      alias: `国标 标准版 ${sublabel} ${code}`,
+      category,
+      emoji,
+      kcal,
+      carbs,
+      protein,
+      fat,
+      unitName: '100g',
+      unitGrams: 100,
+      tip,
+      isStandard: true
+    });
+  }
+}
