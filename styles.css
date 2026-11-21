@@ -1968,3 +1968,147 @@ button {
 .load-more-btn:active {
   background: var(--bg-search);
 }
+
+/* ==================== v1.5.0 新增样式：右滑收藏 & 批量编辑 ==================== */
+.list-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meta-link-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ios-blue);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.meta-link-btn:active {
+  background: var(--blue-soft);
+}
+
+/* 左侧右滑动作区（右滑收藏） */
+.swipe-actions-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  z-index: 1;
+}
+
+.swipe-btn.fav {
+  background: #FF2D55;
+}
+
+/* 批量编辑复选框与底部栏 */
+.batch-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--tertiary-label);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #FFFFFF;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.batch-check.checked {
+  background: var(--ios-blue);
+  border-color: var(--ios-blue);
+}
+
+.food-row.selected {
+  background: var(--blue-soft);
+}
+
+.batch-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 16px calc(12px + var(--safe-bottom));
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-top: 0.5px solid var(--separator);
+  z-index: 40;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.batch-bar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.batch-bar-top-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.batch-bar-btns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.batch-op-btn {
+  padding: 10px 6px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.batch-op-btn:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+.batch-op-btn.fav {
+  background: rgba(255, 45, 85, 0.14);
+  color: #FF2D55;
+}
+
+.batch-op-btn.cat {
+  background: var(--blue-soft);
+  color: var(--ios-blue);
+}
+
+.batch-op-btn.del {
+  background: var(--red-soft);
+  color: var(--ios-red);
+}
+
+.cat-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.cat-pick-btn {
+  padding: 10px 8px;
+  border-radius: 11px;
+  background: var(--bg-grouped);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label);
+  text-align: center;
+}
+
+.cat-pick-btn:active {
+  background: var(--blue-soft);
+  color: var(--ios-blue);
+}

@@ -47,6 +47,9 @@ jobs:
       - name: Package unsigned .ipa for sideloading
         working-directory: ios
         run: |
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" build/Build/Products/Release-iphoneos/QingKaLookup.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/Build/Products/Release-iphoneos/QingKaLookup.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" build/Build/Products/Release-iphoneos/QingKaLookup.app/Info.plist
           mkdir -p dist/Payload
           cp -R build/Build/Products/Release-iphoneos/QingKaLookup.app dist/Payload/
           cd dist

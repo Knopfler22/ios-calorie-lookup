@@ -86,7 +86,10 @@
       <section class="content-scroll">
         <div class="list-meta-row">
           <span id="result-count">共 0 种食物</span>
-          <span class="meta-hint">支持空格多词检索 · 点右上角可自建食物</span>
+          <div class="list-meta-actions">
+            <button id="btn-restore-hidden" class="meta-link-btn hidden">恢复已删(0)</button>
+            <button id="btn-batch-mode" class="meta-link-btn">批量编辑</button>
+          </div>
         </div>
         <div id="food-list" class="ios-inset-list"></div>
         <div id="lookup-empty" class="empty-state hidden">
@@ -100,6 +103,22 @@
           </div>
         </div>
       </section>
+
+      <!-- 批量编辑底部工具栏 -->
+      <div id="batch-action-bar" class="batch-bar hidden">
+        <div class="batch-bar-top">
+          <span id="batch-selected-count">已选 0 项</span>
+          <div class="batch-bar-top-right">
+            <button id="btn-batch-select-all" type="button" class="meta-link-btn">全选当前页</button>
+            <button id="btn-batch-done" type="button" class="meta-link-btn">完成</button>
+          </div>
+        </div>
+        <div class="batch-bar-btns">
+          <button id="btn-batch-fav" type="button" class="batch-op-btn fav">❤️ 批量收藏</button>
+          <button id="btn-batch-cat" type="button" class="batch-op-btn cat">📂 改分类</button>
+          <button id="btn-batch-delete" type="button" class="batch-op-btn del">🗑️ 批量删除</button>
+        </div>
+      </div>
     </main>
 
     <!-- ==================== 视图 2：收藏 ==================== -->

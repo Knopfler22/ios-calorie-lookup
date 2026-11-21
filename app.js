@@ -2,9 +2,12 @@
   'use strict';
 
   // ==================== 持久化 Key ====================
+  const APP_VERSION = 'v1.5.0';
   const STORAGE_KEYS = {
     FAVORITES: 'ios_cal_favorites_v1',
     CUSTOM_FOODS: 'ios_cal_custom_foods_v1',
+    HIDDEN_FOODS: 'ios_cal_hidden_foods_v1',
+    CATEGORY_OVERRIDES: 'ios_cal_cat_overrides_v1',
     PLATE: 'ios_cal_plate_v1',
     PLATE_DATE: 'ios_cal_plate_date_v1',
     PLATE_HISTORY: 'ios_cal_plate_history_v1',
@@ -86,6 +89,10 @@
     searchQuery: '',
     listUnitMode: '100g', // '100g' | 'unit'
     customFoods: loadJSON(STORAGE_KEYS.CUSTOM_FOODS, []),
+    hiddenFoodIds: loadJSON(STORAGE_KEYS.HIDDEN_FOODS, []),
+    categoryOverrides: loadJSON(STORAGE_KEYS.CATEGORY_OVERRIDES, {}),
+    batchMode: false,
+    selectedFoodIds: new Set(),
     favorites: loadJSON(STORAGE_KEYS.FAVORITES, ['egg', 'chicken-breast', 'rice', 'milk-tea']),
     plateHistory: loadPlateHistory(),
     plateDate: getTodayStr(),
@@ -131,6 +138,14 @@
     localStorage.setItem(STORAGE_KEYS.CUSTOM_FOODS, JSON.stringify(state.customFoods));
   }
 
+  function saveHiddenFoods() {
+    localStorage.setItem(STORAGE_KEYS.HIDDEN_FOODS, JSON.stringify(state.hiddenFoodIds));
+  }
+
+  function saveCategoryOverrides() {
+    localStorage.setItem(STORAGE_KEYS.CATEGORY_OVERRIDES, JSON.stringify(state.categoryOverrides));
+  }
+
   function saveFavorites() {
     localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(state.favorites));
   }
@@ -149,11 +164,21 @@
   }
 
   function getAllFoods() {
-    return [...state.customFoods, ...FOOD_DATABASE];
+    const hiddenSet = new Set(state.hiddenFoodIds);
+    const overrides = state.categoryOverrides || {};
+    const builtIns = FOOD_DATABASE
+      .filter((x) => !hiddenSet.has(x.id))
+      .map((x) => (overrides[x.id] ? { ...x, category: overrides[x.id] } : x));
+    return [...state.customFoods, ...builtIns];
   }
 
   function getFoodById(id) {
-    return state.customFoods.find((x) => x.id === id) || FOOD_DATABASE.find((x) => x.id === id);
+    const custom = state.customFoods.find((x) => x.id === id);
+    if (custom) return custom;
+    const base = FOOD_DATABASE.find((x) => x.id === id);
+    if (!base) return undefined;
+    const ov = state.categoryOverrides && state.categoryOverrides[id];
+    return ov ? { ...base, category: ov } : base;
   }
 
   // ==================== DOM 引用 ====================
@@ -175,6 +200,15 @@
     unitToggle: $('#unit-toggle'),
     favUnitToggle: $('#fav-unit-toggle'),
     resultCount: $('#result-count'),
+    btnRestoreHidden: $('#btn-restore-hidden'),
+    btnBatchMode: $('#btn-batch-mode'),
+    batchActionBar: $('#batch-action-bar'),
+    batchSelectedCount: $('#batch-selected-count'),
+    btnBatchSelectAll: $('#btn-batch-select-all'),
+    btnBatchDone: $('#btn-batch-done'),
+    btnBatchFav: $('#btn-batch-fav'),
+    btnBatchCat: $('#btn-batch-cat'),
+    btnBatchDelete: $('#btn-batch-delete'),
     foodList: $('#food-list'),
     lookupEmpty: $('#lookup-empty'),
     btnEmptyAddCustom: $('#btn-empty-add-custom'),
@@ -416,8 +450,12 @@
       ? `约 ${food.unitGrams}g · 蛋白 ${((food.protein * food.unitGrams) / 100).toFixed(1)}g`
       : `${food.unitName}≈${food.unitGrams}g · 蛋白 ${food.protein}g`;
 
+    const isBatch = context === 'lookup' && state.batchMode;
+    const isSelected = isBatch && state.selectedFoodIds.has(food.id);
+
     const rowInner = `
-      <div class="food-row" data-food-id="${food.id}">
+      <div class="food-row ${isSelected ? 'selected' : ''}" data-food-id="${food.id}">
+        ${isBatch ? `<div class="batch-check ${isSelected ? 'checked' : ''}">${isSelected ? '✓' : ''}</div>` : ''}
         <div class="food-emoji-box">${food.emoji}</div>
         <div class="food-info">
           <div class="food-name-line">
@@ -433,28 +471,45 @@
             <div class="food-kcal-val ${level.key}">${displayKcal}</div>
             <div class="food-kcal-unit">${escapeHTML(displayUnit)}</div>
           </div>
-          <button class="quick-add-btn" data-quick-add="${food.id}" aria-label="快捷加入餐盘" title="快捷加入餐盘">+</button>
+          ${isBatch ? '' : `<button class="quick-add-btn" data-quick-add="${food.id}" aria-label="快捷加入餐盘" title="快捷加入餐盘">+</button>`}
         </div>
       </div>
     `;
 
-    // 根据上下文生成左滑按钮
-    const actions = [];
-    if (context === 'favorites') {
-      actions.push(`<button class="swipe-btn unfav" data-swipe-unfav="${food.id}">取消收藏</button>`);
-    }
-    if (food.isCustom && (context === 'lookup' || context === 'favorites')) {
-      actions.push(`<button class="swipe-btn edit" data-swipe-edit-food="${food.id}">编辑</button>`);
-      actions.push(`<button class="swipe-btn delete" data-swipe-delete-food="${food.id}">删除</button>`);
+    if (isBatch || context === 'plain') {
+      return rowInner;
     }
 
-    if (actions.length === 0) {
+    // 左侧（右滑露出）：速查页所有食物支持右滑收藏/取消收藏
+    const leftActions = [];
+    if (context === 'lookup') {
+      leftActions.push(
+        isFav
+          ? `<button class="swipe-btn unfav" data-swipe-fav="${food.id}">取消收藏</button>`
+          : `<button class="swipe-btn fav" data-swipe-fav="${food.id}">❤️ 收藏</button>`
+      );
+    }
+
+    // 右侧（左滑露出）：速查页所有食物支持左滑删除（自定义含编辑+删除）；收藏页支持取消收藏+删除
+    const rightActions = [];
+    if (context === 'favorites') {
+      rightActions.push(`<button class="swipe-btn unfav" data-swipe-unfav="${food.id}">取消收藏</button>`);
+    }
+    if (food.isCustom && (context === 'lookup' || context === 'favorites')) {
+      rightActions.push(`<button class="swipe-btn edit" data-swipe-edit-food="${food.id}">编辑</button>`);
+    }
+    if (context === 'lookup' || (food.isCustom && context === 'favorites')) {
+      rightActions.push(`<button class="swipe-btn delete" data-swipe-delete-food="${food.id}">删除</button>`);
+    }
+
+    if (leftActions.length === 0 && rightActions.length === 0) {
       return rowInner;
     }
 
     return `
       <div class="swipe-item">
-        <div class="swipe-actions">${actions.join('')}</div>
+        ${leftActions.length > 0 ? `<div class="swipe-actions-left">${leftActions.join('')}</div>` : ''}
+        ${rightActions.length > 0 ? `<div class="swipe-actions">${rightActions.join('')}</div>` : ''}
         <div class="swipe-content">${rowInner}</div>
       </div>
     `;
@@ -518,6 +573,14 @@
     dom.resultCount.textContent = customCount > 0
       ? `共 ${foods.length} 种食物（含 ${customCount} 种自定义）`
       : `共 ${foods.length} 种食物`;
+
+    const hiddenCount = state.hiddenFoodIds.length;
+    dom.btnRestoreHidden.classList.toggle('hidden', hiddenCount === 0);
+    if (hiddenCount > 0) {
+      dom.btnRestoreHidden.textContent = `恢复已删(${hiddenCount})`;
+    }
+
+    updateBatchBarUI();
 
     if (foods.length === 0) {
       dom.foodList.classList.add('hidden');
@@ -1653,6 +1716,169 @@
     dom.modalBackdrop.classList.add('hidden');
   }
 
+  // ==================== 食品库单条删除/隐藏 & 批量编辑 ====================
+  function removeFoodFromLibrary(foodId) {
+    const food = getFoodById(foodId);
+    if (!food) return;
+
+    if (food.isCustom) {
+      deleteCustomFood(foodId);
+      return;
+    }
+
+    // 内置/国标食物：加入隐藏名单（可随时恢复）
+    if (!state.hiddenFoodIds.includes(foodId)) {
+      state.hiddenFoodIds.push(foodId);
+      saveHiddenFoods();
+    }
+    state.favorites = state.favorites.filter((id) => id !== foodId);
+    saveFavorites();
+    state.selectedFoodIds.delete(foodId);
+    renderLookupList(false);
+    renderFavoritesList();
+    showToast(`已移除「${food.name}」（可点击恢复已删找回）`);
+  }
+
+  function restoreHiddenFoods() {
+    const count = state.hiddenFoodIds.length;
+    if (count === 0) return;
+    openModal({
+      title: `恢复已删除的 ${count} 种内置食物？`,
+      html: '<p style="margin:0;text-align:center;">将把你此前左滑或批量删除的内置/国标食物重新恢复到速查库中。</p>',
+      actions: [
+        { text: '取消', cls: 'cancel' },
+        {
+          text: '全部恢复',
+          onClick: () => {
+            state.hiddenFoodIds = [];
+            saveHiddenFoods();
+            renderLookupList(false);
+            showToast(`✓ 已恢复 ${count} 种内置食物`);
+          }
+        }
+      ]
+    });
+  }
+
+  function updateBatchBarUI() {
+    dom.btnBatchMode.textContent = state.batchMode ? '完成' : '批量编辑';
+    dom.batchActionBar.classList.toggle('hidden', !state.batchMode);
+    if (!state.batchMode) return;
+
+    const count = state.selectedFoodIds.size;
+    dom.batchSelectedCount.textContent = `已选 ${count} 项`;
+    const visibleIds = lastFilteredFoods.slice(0, lookupDisplayLimit).map((f) => f.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => state.selectedFoodIds.has(id));
+    dom.btnBatchSelectAll.textContent = allVisibleSelected ? '取消全选' : '全选当前页';
+  }
+
+  function toggleBatchMode(forceVal = null) {
+    closeAllSwipes();
+    state.batchMode = forceVal !== null ? forceVal : !state.batchMode;
+    if (!state.batchMode) {
+      state.selectedFoodIds.clear();
+    }
+    renderLookupList(false);
+  }
+
+  function batchFavoriteSelected() {
+    const ids = Array.from(state.selectedFoodIds);
+    if (ids.length === 0) {
+      showToast('请先勾选要收藏的食物');
+      return;
+    }
+    let added = 0;
+    ids.forEach((id) => {
+      if (!state.favorites.includes(id)) {
+        state.favorites.unshift(id);
+        added++;
+      }
+    });
+    saveFavorites();
+    renderFavoritesList();
+    renderLookupList(false);
+    showToast(added > 0 ? `❤️ 已批量收藏 ${added} 种食物` : '选中的食物已在收藏夹中');
+  }
+
+  function batchChangeCategorySelected() {
+    const ids = Array.from(state.selectedFoodIds);
+    if (ids.length === 0) {
+      showToast('请先勾选要改分类的食物');
+      return;
+    }
+    const cats = FOOD_CATEGORIES.filter((c) => c.id !== 'all');
+    openModal({
+      title: `批量修改 ${ids.length} 项的分类`,
+      html: `
+        <div class="cat-pick-grid">
+          ${cats.map((c) => `
+            <button type="button" class="cat-pick-btn" data-batch-cat-target="${c.id}">
+              ${c.icon} ${c.name}
+            </button>
+          `).join('')}
+        </div>
+      `,
+      actions: [{ text: '取消', cls: 'cancel' }]
+    });
+
+    dom.modalContent.querySelectorAll('[data-batch-cat-target]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const targetCat = btn.dataset.batchCatTarget;
+        const catObj = cats.find((c) => c.id === targetCat);
+        ids.forEach((id) => {
+          const custom = state.customFoods.find((x) => x.id === id);
+          if (custom) {
+            custom.category = targetCat;
+          } else {
+            state.categoryOverrides[id] = targetCat;
+          }
+        });
+        saveCustomFoods();
+        saveCategoryOverrides();
+        state.selectedFoodIds.clear();
+        closeModal();
+        renderLookupList(false);
+        showToast(`📂 已将 ${ids.length} 种食物移至「${catObj ? catObj.name : targetCat}」`);
+      });
+    });
+  }
+
+  function batchDeleteSelected() {
+    const ids = Array.from(state.selectedFoodIds);
+    if (ids.length === 0) {
+      showToast('请先勾选要删除的食物');
+      return;
+    }
+    openModal({
+      title: `批量删除 ${ids.length} 种食物？`,
+      html: '<p style="margin:0;text-align:center;">自定义食物将永久删除，内置食物将从速查库隐藏（可随时点击“恢复已删”找回）。</p>',
+      actions: [
+        { text: '取消', cls: 'cancel' },
+        {
+          text: '确认删除',
+          cls: 'danger',
+          onClick: () => {
+            const idSet = new Set(ids);
+            state.customFoods = state.customFoods.filter((x) => !idSet.has(x.id));
+            ids.forEach((id) => {
+              if (!id.startsWith('custom_') && !state.hiddenFoodIds.includes(id)) {
+                state.hiddenFoodIds.push(id);
+              }
+            });
+            state.favorites = state.favorites.filter((id) => !idSet.has(id));
+            saveCustomFoods();
+            saveHiddenFoods();
+            saveFavorites();
+            state.selectedFoodIds.clear();
+            renderLookupList(false);
+            renderFavoritesList();
+            showToast(`🗑️ 已删除 ${ids.length} 种食物`);
+          }
+        }
+      ]
+    });
+  }
+
   function showLegendModal() {
     openModal({
       title: '🚦 热量红绿灯分级标准',
@@ -1665,9 +1891,12 @@
           <span>🟡</span>
           <div><strong>黄灯适中（101 ~ 250 kcal / 100g）</strong><br/>如米饭、鸡胸肉、鸡蛋、瘦牛肉、家常菜等，日常核心营养，注意均衡份量。</div>
         </div>
-        <div class="legend-item" style="margin-bottom:0;">
+        <div class="legend-item">
           <span>🔴</span>
           <div><strong>红灯高卡（>250 kcal / 100g）</strong><br/>如坚果、油炸零食、五花肉、蛋糕等能量密度高，建议严格控量浅尝。</div>
+        </div>
+        <div style="text-align:center;font-size:11px;color:var(--tertiary-label);margin-top:8px;">
+          轻卡速查 ${APP_VERSION} · 左滑删除 · 右滑收藏
         </div>
       `,
       actions: [{ text: '知道了' }]
@@ -1921,7 +2150,7 @@
       });
     });
 
-    // 列表点击（含左滑操作、加载更多与 AI 本地相似列表）
+    // 列表点击（含左滑删除/编辑、右滑收藏、批量勾选、加载更多与 AI 本地相似列表）
     [dom.foodList, dom.favoritesList, dom.aiLocalMatchesList].forEach((listEl) => {
       listEl.addEventListener('click', (e) => {
         if (Date.now() < swipeSuppressClickUntil) return;
@@ -1930,6 +2159,14 @@
         if (moreBtn) {
           lookupDisplayLimit += 80;
           renderLookupList(false);
+          return;
+        }
+
+        const favBtn = e.target.closest('[data-swipe-fav]');
+        if (favBtn) {
+          e.stopPropagation();
+          closeAllSwipes();
+          toggleFavorite(favBtn.dataset.swipeFav);
           return;
         }
 
@@ -1952,7 +2189,7 @@
         if (delFoodBtn) {
           e.stopPropagation();
           closeAllSwipes();
-          deleteCustomFood(delFoodBtn.dataset.swipeDeleteFood);
+          removeFoodFromLibrary(delFoodBtn.dataset.swipeDeleteFood);
           return;
         }
         const quickBtn = e.target.closest('[data-quick-add]');
@@ -1963,6 +2200,23 @@
         }
         const row = e.target.closest('.food-row');
         if (row) {
+          if (listEl === dom.foodList && state.batchMode) {
+            const fid = row.dataset.foodId;
+            if (state.selectedFoodIds.has(fid)) {
+              state.selectedFoodIds.delete(fid);
+            } else {
+              state.selectedFoodIds.add(fid);
+            }
+            row.classList.toggle('selected', state.selectedFoodIds.has(fid));
+            const chk = row.querySelector('.batch-check');
+            if (chk) {
+              const checked = state.selectedFoodIds.has(fid);
+              chk.classList.toggle('checked', checked);
+              chk.textContent = checked ? '✓' : '';
+            }
+            updateBatchBarUI();
+            return;
+          }
           if (openSwipeItem) {
             closeAllSwipes();
             return;
@@ -1972,6 +2226,24 @@
         }
       });
     });
+
+    // 批量编辑工具栏事件
+    dom.btnBatchMode.addEventListener('click', () => toggleBatchMode());
+    dom.btnBatchDone.addEventListener('click', () => toggleBatchMode(false));
+    dom.btnRestoreHidden.addEventListener('click', restoreHiddenFoods);
+    dom.btnBatchSelectAll.addEventListener('click', () => {
+      const visibleIds = lastFilteredFoods.slice(0, lookupDisplayLimit).map((f) => f.id);
+      const allSelected = visibleIds.length > 0 && visibleIds.every((id) => state.selectedFoodIds.has(id));
+      if (allSelected) {
+        visibleIds.forEach((id) => state.selectedFoodIds.delete(id));
+      } else {
+        visibleIds.forEach((id) => state.selectedFoodIds.add(id));
+      }
+      renderLookupList(false);
+    });
+    dom.btnBatchFav.addEventListener('click', batchFavoriteSelected);
+    dom.btnBatchCat.addEventListener('click', batchChangeCategorySelected);
+    dom.btnBatchDelete.addEventListener('click', batchDeleteSelected);
 
     dom.btnGoLookup.addEventListener('click', () => switchTab('lookup'));
     dom.btnPlateGoLookup.addEventListener('click', () => switchTab('lookup'));
@@ -2264,8 +2536,9 @@
     }
   }
 
-  // ==================== 原生感左滑手势引擎 (iOS Swipe Actions) ====================
+  // ==================== 原生感双向滑动手势引擎 (左滑删除 + 右滑收藏) ====================
   let openSwipeItem = null;
+  let openSwipeSide = null; // 'left' (滑开右侧动作) | 'right' (滑开左侧动作)
   let swipeSuppressClickUntil = 0;
 
   function closeAllSwipes(exceptItem = null) {
@@ -2273,6 +2546,7 @@
       const content = openSwipeItem.querySelector('.swipe-content');
       if (content) content.style.transform = 'translateX(0)';
       openSwipeItem = null;
+      openSwipeSide = null;
     }
   }
 
@@ -2282,7 +2556,8 @@
 
     let activeItem = null;
     let activeContent = null;
-    let actionsWidth = 0;
+    let rightWidth = 0;
+    let leftWidth = 0;
     let startX = 0;
     let startY = 0;
     let baseOffset = 0;
@@ -2293,17 +2568,23 @@
 
     const onStart = (e) => {
       const item = e.target.closest('.swipe-item');
-      if (!item || e.target.closest('.swipe-actions')) return;
+      if (!item || e.target.closest('.swipe-actions') || e.target.closest('.swipe-actions-left')) return;
 
       closeAllSwipes(item);
       const pt = getPoint(e);
       activeItem = item;
       activeContent = item.querySelector('.swipe-content');
-      const actionsEl = item.querySelector('.swipe-actions');
-      actionsWidth = actionsEl ? actionsEl.offsetWidth : 72;
+      const rightEl = item.querySelector('.swipe-actions');
+      const leftEl = item.querySelector('.swipe-actions-left');
+      rightWidth = rightEl ? rightEl.offsetWidth : 0;
+      leftWidth = leftEl ? leftEl.offsetWidth : 0;
       startX = pt.clientX;
       startY = pt.clientY;
-      baseOffset = (openSwipeItem === item) ? -actionsWidth : 0;
+      if (openSwipeItem === item) {
+        baseOffset = openSwipeSide === 'left' ? -rightWidth : leftWidth;
+      } else {
+        baseOffset = 0;
+      }
       currentOffset = baseOffset;
       isHorizontal = null;
     };
@@ -2328,8 +2609,10 @@
       if (isHorizontal) {
         if (e.cancelable) e.preventDefault();
         let next = baseOffset + dx;
-        if (next > 0) next = 0;
-        if (next < -actionsWidth - 18) next = -actionsWidth - 18;
+        const maxPos = leftWidth > 0 ? leftWidth + 16 : 0;
+        const minNeg = rightWidth > 0 ? -(rightWidth + 16) : 0;
+        if (next > maxPos) next = maxPos;
+        if (next < minNeg) next = minNeg;
         currentOffset = next;
         activeContent.style.transform = `translateX(${currentOffset}px)`;
       }
@@ -2340,12 +2623,20 @@
       activeContent.classList.remove('dragging');
       if (isHorizontal) {
         swipeSuppressClickUntil = Date.now() + 180;
-        if (currentOffset < -Math.min(44, actionsWidth * 0.45)) {
-          activeContent.style.transform = `translateX(-${actionsWidth}px)`;
+        if (rightWidth > 0 && currentOffset < -Math.min(44, rightWidth * 0.45)) {
+          activeContent.style.transform = `translateX(-${rightWidth}px)`;
           openSwipeItem = activeItem;
+          openSwipeSide = 'left';
+        } else if (leftWidth > 0 && currentOffset > Math.min(44, leftWidth * 0.45)) {
+          activeContent.style.transform = `translateX(${leftWidth}px)`;
+          openSwipeItem = activeItem;
+          openSwipeSide = 'right';
         } else {
           activeContent.style.transform = 'translateX(0)';
-          if (openSwipeItem === activeItem) openSwipeItem = null;
+          if (openSwipeItem === activeItem) {
+            openSwipeItem = null;
+            openSwipeSide = null;
+          }
         }
       }
       activeItem = null;
