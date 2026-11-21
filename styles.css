@@ -1670,3 +1670,37 @@ button {
   background: var(--bg-grouped);
   box-shadow: none;
 }
+
+.error-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-res-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ai-source-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--ios-green);
+}
+
+.ai-source-pill.cloud {
+  background: var(--blue-soft);
+  color: var(--ios-blue);
+}
+
+.link-btn-sm {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ios-blue);
+}

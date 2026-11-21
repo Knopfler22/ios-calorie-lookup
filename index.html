@@ -495,23 +495,33 @@
           <img id="camera-preview-img" alt="食物照片预览" />
           <div id="camera-scanning-overlay" class="scanning-overlay hidden">
             <div class="scan-line"></div>
-            <div class="scan-text">AI 正在识别食物并估算热量...</div>
+            <div id="camera-scan-text" class="scan-text">正在识别食物并估算热量...</div>
           </div>
         </div>
 
         <!-- 未配置 Key 提示 -->
         <div id="camera-no-key-tip" class="tip-box hidden" style="margin-top:12px;">
-          <span class="tip-icon">🔑</span>
+          <span class="tip-icon">⚡</span>
           <div>
-            <strong>尚未配置 AI Key</strong>：点击右上角 <strong>⚙️</strong> 填入免费 Gemini API Key（或通义千问 / 智谱 / OpenAI 兼容 Key）即可开启拍照自动识别；也可直接点下方手动入库。
+            <strong>离线拍营养成分表免 Key 秒出！</strong><br/>
+            拍散装菜肴需云端 AI：点击右上角 <strong>⚙️</strong> 填入免费 Gemini Key（支持自动切换备用模型防堵车）。
           </div>
         </div>
 
-        <!-- 错误提示 -->
-        <div id="camera-error-box" class="error-box hidden"></div>
+        <!-- 错误提示 + 一键重试 -->
+        <div id="camera-error-box" class="error-box hidden">
+          <div id="camera-error-text"></div>
+          <div class="error-actions">
+            <button id="btn-ai-retry" type="button" class="ios-btn-secondary" style="padding:7px 14px;font-size:13px;">🔄 立即重试</button>
+          </div>
+        </div>
 
-        <!-- AI 识别结果卡片 -->
+        <!-- 识别结果卡片 -->
         <div id="camera-result-card" class="ai-result-card hidden">
+          <div class="ai-res-source-row">
+            <span id="ai-res-source" class="ai-source-pill">⚡ 本地离线识别</span>
+            <button id="btn-force-cloud-ai" type="button" class="link-btn-sm hidden">改用云端 AI 识别 →</button>
+          </div>
           <div class="ai-res-header">
             <div class="ai-res-title-row">
               <span id="ai-res-emoji" class="ai-res-emoji">🍽️</span>

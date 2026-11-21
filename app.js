@@ -77,7 +77,8 @@
       meal: getSmartDefaultMeal()
     },
     customFormEmoji: '🍱',
-    lastAIResult: null
+    lastAIResult: null,
+    lastImagePayload: null
   };
 
   function saveCustomFoods() {
@@ -245,9 +246,14 @@
     cameraPreviewWrap: $('#camera-preview-wrap'),
     cameraPreviewImg: $('#camera-preview-img'),
     cameraScanningOverlay: $('#camera-scanning-overlay'),
+    cameraScanText: $('#camera-scan-text'),
     cameraNoKeyTip: $('#camera-no-key-tip'),
     cameraErrorBox: $('#camera-error-box'),
+    cameraErrorText: $('#camera-error-text'),
+    btnAIRetry: $('#btn-ai-retry'),
     cameraResultCard: $('#camera-result-card'),
+    aiResSource: $('#ai-res-source'),
+    btnForceCloudAI: $('#btn-force-cloud-ai'),
     aiResEmoji: $('#ai-res-emoji'),
     aiResName: $('#ai-res-name'),
     aiResLevel: $('#ai-res-level'),
@@ -985,39 +991,222 @@
     return JSON.parse(cleaned.slice(start, end + 1));
   }
 
-  async function callVisionModel(base64, mimeType) {
+  // ==================== 引擎 1：iOS 原生离线 Vision OCR ====================
+  const pendingOCRRequests = new Map();
+  window.__onNativeOCRResult = (payload) => {
+    if (!payload || !payload.requestId) return;
+    const resolver = pendingOCRRequests.get(payload.requestId);
+    if (resolver) {
+      pendingOCRRequests.delete(payload.requestId);
+      resolver(payload);
+    }
+  };
+
+  function runNativeOCR(base64) {
+    return new Promise((resolve) => {
+      if (!window.__IOS_NATIVE_OCR__ || !window.webkit?.messageHandlers?.nativeOCR) {
+        resolve({ lines: [], unsupported: true });
+        return;
+      }
+      const requestId = `ocr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const timer = setTimeout(() => {
+        pendingOCRRequests.delete(requestId);
+        resolve({ lines: [], error: 'OCR 超时' });
+      }, 6000);
+
+      pendingOCRRequests.set(requestId, (payload) => {
+        clearTimeout(timer);
+        resolve(payload);
+      });
+
+      try {
+        window.webkit.messageHandlers.nativeOCR.postMessage({ requestId, base64 });
+      } catch {
+        clearTimeout(timer);
+        pendingOCRRequests.delete(requestId);
+        resolve({ lines: [] });
+      }
+    });
+  }
+
+  // 解析中国预包装食品「营养成分表」(GB 28050)
+  function parseNutritionLabelOCR(lines) {
+    if (!Array.isArray(lines) || lines.length === 0) return null;
+    const text = lines.join(' ').replace(/\s+/g, ' ');
+
+    // 提取能量（支持 千焦/kJ 自动 ÷4.184 转 kcal，也支持 千卡/kcal/大卡）
+    let kcalRaw = null;
+    let energyUnit = '';
+    let energyOrig = null;
+
+    const kjMatch = text.match(/能\s*量[^0-9]{0,18}(\d+(?:\.\d+)?)\s*(?:千\s*焦|k\s*j|KJ)/i)
+      || text.match(/(\d+(?:\.\d+)?)\s*(?:千\s*焦|k\s*j)/i);
+    const kcalMatch = text.match(/能\s*量[^0-9]{0,18}(\d+(?:\.\d+)?)\s*(?:千\s*卡|大\s*卡|k\s*c\s*a\s*l)/i)
+      || text.match(/(\d+(?:\.\d+)?)\s*(?:千\s*卡|大\s*卡|k\s*c\s*a\s*l)/i);
+
+    if (kcalMatch) {
+      kcalRaw = parseFloat(kcalMatch[1]);
+      energyUnit = 'kcal';
+      energyOrig = `${kcalMatch[1]} 千卡`;
+    } else if (kjMatch) {
+      const kjVal = parseFloat(kjMatch[1]);
+      kcalRaw = kjVal / 4.184;
+      energyUnit = 'kJ';
+      energyOrig = `${kjMatch[1]} 千焦`;
+    }
+
+    // 提取蛋白/脂肪/碳水（脂肪排除反式脂肪、饱和脂肪）
+    const proteinMatch = text.match(/蛋\s*白\s*质?[^0-9]{0,14}(\d+(?:\.\d+)?)\s*(?:克|g)/i);
+    const fatCleaned = text.replace(/(?:反式|饱和|不饱和)\s*脂\s*肪(?:酸)?[^0-9]{0,14}\d+(?:\.\d+)?\s*(?:克|g)?/gi, '');
+    const fatMatch = fatCleaned.match(/脂\s*肪[^0-9]{0,14}(\d+(?:\.\d+)?)\s*(?:克|g)/i);
+    const carbsMatch = text.match(/碳\s*水(?:\s*化\s*合\s*物)?[^0-9]{0,14}(\d+(?:\.\d+)?)\s*(?:克|g)/i);
+
+    const hasMacro = Boolean(proteinMatch || fatMatch || carbsMatch);
+    const hasTableKeyword = /营养成分表|营养素参考值|NRV|每\s*100|千焦|kJ/i.test(text);
+
+    // 必须识别到能量，且具备成分表特征或至少一项营养素，才判定为营养成分表
+    if (kcalRaw === null || (!hasMacro && !hasTableKeyword)) {
+      return null;
+    }
+
+    // 识别基准份量（每100g / 每100mL / 每份XXg）
+    let baseGrams = 100;
+    let isLiquid = /100\s*(?:毫\s*升|m\s*l)|净\s*含\s*量[^0-9]{0,8}\d+\s*(?:毫\s*升|m\s*l)/i.test(text);
+    const perPortionMatch = text.match(/每\s*份\s*[（(]?\s*(\d+(?:\.\d+)?)\s*(?:克|g|毫\s*升|m\s*l)/i);
+    const per100Match = text.match(/每\s*100\s*(?:克|g|毫\s*升|m\s*l)/i);
+    if (!per100Match && perPortionMatch) {
+      const pVal = parseFloat(perPortionMatch[1]);
+      if (pVal > 5 && pVal <= 1000) baseGrams = pVal;
+    }
+
+    const scale = 100 / baseGrams;
+    const kcalPer100g = Math.round(kcalRaw * scale);
+    const proteinPer100g = proteinMatch ? +(parseFloat(proteinMatch[1]) * scale).toFixed(1) : 0;
+    const fatPer100g = fatMatch ? +(parseFloat(fatMatch[1]) * scale).toFixed(1) : 0;
+    const carbsPer100g = carbsMatch ? +(parseFloat(carbsMatch[1]) * scale).toFixed(1) : 0;
+
+    // 识别净含量作为常见份量参考（如 250ml / 950ml / 100g）
+    let portionGrams = isLiquid ? 250 : 100;
+    let portionName = isLiquid ? '1杯 (250ml)' : '100g';
+    const netMatch = text.match(/净\s*含\s*量[^0-9]{0,10}(\d+(?:\.\d+)?)\s*(毫\s*升|m\s*l|升|L|克|g|千\s*克|k\s*g)/i);
+    if (netMatch) {
+      let val = parseFloat(netMatch[1]);
+      const unit = netMatch[2].toLowerCase().replace(/\s+/g, '');
+      if (unit === 'l' || unit === '升' || unit === 'kg' || unit === '千克') val *= 1000;
+      if (val >= 15 && val <= 600) {
+        portionGrams = Math.round(val);
+        portionName = isLiquid ? `1瓶/盒` : `1袋/份`;
+      } else if (val > 600 && isLiquid) {
+        portionGrams = 250;
+        portionName = '1杯';
+      }
+    }
+
+    // 智能猜测品名、分类和 Emoji
+    const keywordRules = [
+      { re: /鲜牛奶|纯牛奶|巴氏杀菌|鲜奶|牛乳|牛奶/, name: '鲜牛奶 / 纯牛奶', emoji: '🥛', cat: 'dairy' },
+      { re: /酸奶|发酵乳|风味乳/, name: '酸奶 / 发酵乳', emoji: '🥣', cat: 'dairy' },
+      { re: /豆浆|豆奶|植物蛋白/, name: '豆浆 / 植物奶', emoji: '🥛', cat: 'dairy' },
+      { re: /咖啡|拿铁|美式/, name: '咖啡饮品', emoji: '☕', cat: 'dairy' },
+      { re: /奶茶|果茶|乌龙茶|茶饮料/, name: '瓶装茶饮 / 奶茶', emoji: '🧋', cat: 'snack' },
+      { re: /可乐|汽水|气泡水|苏打水|果汁/, name: '包装饮料', emoji: '🥤', cat: 'snack' },
+      { re: /吐司|面包|全麦|贝果|可颂/, name: '包装面包', emoji: '🍞', cat: 'staple' },
+      { re: /燕麦|麦片|谷物/, name: '燕麦 / 谷物', emoji: '🥣', cat: 'staple' },
+      { re: /鸡胸|牛肉|猪肉|火腿|香肠|午餐肉/, name: '包装肉制品', emoji: '🥩', cat: 'protein' },
+      { re: /薯片|饼干|巧克力|坚果|糖|蛋糕|辣条|海苔/, name: '包装零食', emoji: '🍪', cat: 'snack' }
+    ];
+
+    let matchedRule = keywordRules.find((r) => r.re.test(text));
+    const name = matchedRule ? `${matchedRule.name}（成分表）` : '包装食品（成分表识别）';
+
+    return {
+      name,
+      emoji: matchedRule ? matchedRule.emoji : '📦',
+      category: matchedRule ? matchedRule.cat : 'snack',
+      kcalPer100g,
+      carbsPer100g,
+      proteinPer100g,
+      fatPer100g,
+      portionName,
+      portionGrams,
+      tip: `已离线提取包装营养成分表（原始能量 ${energyOrig} → ${kcalPer100g} kcal/100${isLiquid ? 'ml' : 'g'}），点「存入食物库」可改名永久保存。`,
+      _isOffline: true,
+      _sourceLabel: '⚡ iPhone 本地离线 OCR 识别'
+    };
+  }
+
+  // ==================== 引擎 2：云端 AI 视觉模型（含多模型容灾防堵车） ====================
+  async function callSingleGeminiModel(targetModel, apiKey, base64, mimeType) {
+    const cleanModel = targetModel.replace(/^models\//, '');
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cleanModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: AI_FOOD_PROMPT },
+            { inline_data: { mime_type: mimeType, data: base64 } }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: 'application/json'
+        }
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data?.error?.message || `Gemini API 错误 (${res.status})`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
+    }
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const parsed = parseAIJsonText(text);
+    parsed._isOffline = false;
+    parsed._sourceLabel = `🤖 ${cleanModel} 估算`;
+    return parsed;
+  }
+
+  async function callVisionModel(base64, mimeType, onStatus) {
     const { provider, geminiModel, apiKey, baseUrl, model } = state.aiConfig;
     if (!apiKey) {
       throw new Error('请先点击右上角 ⚙️ 配置你的 AI API Key');
     }
 
     if (provider === 'gemini') {
-      const targetModel = (geminiModel || 'gemini-3.8-flash').replace(/^models\//, '');
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: AI_FOOD_PROMPT },
-              { inline_data: { mime_type: mimeType, data: base64 } }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: 'application/json'
-          }
-        })
-      });
+      // 主模型 + 自动容灾备用链（高吞吐 Lite 模型抗堵车）
+      const primary = (geminiModel || 'gemini-3.8-flash').trim();
+      const candidates = [...new Set([
+        primary,
+        'gemini-3.8-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite'
+      ].filter(Boolean))];
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error?.message || `Gemini API 错误 (${res.status})`);
+      let lastErr = null;
+      for (let i = 0; i < candidates.length; i++) {
+        const m = candidates[i];
+        try {
+          if (onStatus) {
+            onStatus(i === 0 ? `正在使用 ${m} 识别...` : `主模型繁忙，自动切换 ${m}...`);
+          }
+          return await callSingleGeminiModel(m, apiKey, base64, mimeType);
+        } catch (err) {
+          lastErr = err;
+          const msg = (err.message || '').toLowerCase();
+          const retryable = err.status === 503 || err.status === 429 || err.status === 404
+            || msg.includes('high demand') || msg.includes('overloaded')
+            || msg.includes('no longer available') || msg.includes('not found')
+            || msg.includes('quota') || msg.includes('resource exhausted');
+          if (!retryable) throw err;
+        }
       }
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      return parseAIJsonText(text);
+      throw lastErr || new Error('所有备用模型当前均繁忙，请稍后重试');
     } else {
+      if (onStatus) onStatus(`正在使用 ${model || '视觉模型'} 识别...`);
       const cleanBase = (baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
       const endpoint = `${cleanBase}/chat/completions`;
       const res = await fetch(endpoint, {
@@ -1039,12 +1228,15 @@
         })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error?.message || `接口请求失败 (${res.status})`);
       }
       const text = data?.choices?.[0]?.message?.content;
-      return parseAIJsonText(text);
+      const parsed = parseAIJsonText(text);
+      parsed._isOffline = false;
+      parsed._sourceLabel = `🤖 ${model || '云端 AI'} 估算`;
+      return parsed;
     }
   }
 
@@ -1080,6 +1272,10 @@
     );
     const level = getCalorieLevel(kcal100);
 
+    dom.aiResSource.textContent = result._sourceLabel || '🤖 AI 识别';
+    dom.aiResSource.classList.toggle('cloud', !result._isOffline);
+    dom.btnForceCloudAI.classList.toggle('hidden', !result._isOffline || !state.aiConfig.apiKey);
+
     dom.aiResEmoji.textContent = result.emoji || '🍽️';
     dom.aiResName.textContent = result.name || '未知食物';
     dom.aiResLevel.textContent = level.badgeText;
@@ -1102,29 +1298,41 @@
     dom.cameraResultCard.classList.remove('hidden');
   }
 
-  async function handleImageSelected(file) {
-    if (!file) return;
+  async function runRecognitionPipeline(base64, mimeType, forceCloud = false) {
     dom.cameraErrorBox.classList.add('hidden');
     dom.cameraResultCard.classList.add('hidden');
+    dom.cameraScanningOverlay.classList.remove('hidden');
 
     try {
-      const { dataUrl, base64, mimeType } = await compressImageToBase64(file);
-      dom.cameraPreviewImg.src = dataUrl;
-      dom.cameraPreviewWrap.classList.remove('hidden');
+      // 1. 优先尝试 iPhone 原生离线 OCR 识别「营养成分表」（0.2秒秒出，永不堵车）
+      if (!forceCloud && window.__IOS_NATIVE_OCR__) {
+        dom.cameraScanText.textContent = '⚡ 离线扫描营养成分表中...';
+        const ocrRes = await runNativeOCR(base64);
+        const parsedLabel = parseNutritionLabelOCR(ocrRes.lines);
+        if (parsedLabel) {
+          dom.cameraScanningOverlay.classList.add('hidden');
+          renderAIResult(parsedLabel);
+          showToast('⚡ 离线秒出！已提取营养成分表');
+          return;
+        }
+      }
 
+      // 2. 非包装成分表图片，走云端 AI 视觉模型（自动容灾防堵车）
       if (!state.aiConfig.apiKey) {
+        dom.cameraScanningOverlay.classList.add('hidden');
         dom.cameraNoKeyTip.classList.remove('hidden');
         dom.aiConfigPanel.classList.remove('hidden');
-        showToast('请先配置 AI Key 再进行自动识别');
+        showToast('未检测到营养成分表，请配置 AI Key 识别菜肴');
         return;
       }
 
-      dom.cameraScanningOverlay.classList.remove('hidden');
-      const result = await callVisionModel(base64, mimeType);
+      const result = await callVisionModel(base64, mimeType, (statusText) => {
+        dom.cameraScanText.textContent = statusText;
+      });
       dom.cameraScanningOverlay.classList.add('hidden');
 
       if (result.error) {
-        dom.cameraErrorBox.textContent = `⚠️ ${result.error}`;
+        dom.cameraErrorText.textContent = `⚠️ ${result.error}`;
         dom.cameraErrorBox.classList.remove('hidden');
         return;
       }
@@ -1132,7 +1340,22 @@
       renderAIResult(result);
     } catch (err) {
       dom.cameraScanningOverlay.classList.add('hidden');
-      dom.cameraErrorBox.textContent = `⚠️ 识别失败：${err.message || '请检查网络或 API Key 配置'}`;
+      dom.cameraErrorText.textContent = `⚠️ 识别失败：${err.message || '请检查网络或 API Key 配置'}`;
+      dom.cameraErrorBox.classList.remove('hidden');
+    }
+  }
+
+  async function handleImageSelected(file) {
+    if (!file) return;
+    try {
+      const { dataUrl, base64, mimeType } = await compressImageToBase64(file);
+      state.lastImagePayload = { base64, mimeType };
+      dom.cameraPreviewImg.src = dataUrl;
+      dom.cameraPreviewWrap.classList.remove('hidden');
+      await runRecognitionPipeline(base64, mimeType, false);
+    } catch (err) {
+      dom.cameraScanningOverlay.classList.add('hidden');
+      dom.cameraErrorText.textContent = `⚠️ 图片读取失败：${err.message || ''}`;
       dom.cameraErrorBox.classList.remove('hidden');
     }
   }
@@ -1584,6 +1807,16 @@
 
     dom.cameraGalleryInput.addEventListener('change', (e) => {
       handleImageSelected(e.target.files[0]);
+    });
+
+    dom.btnAIRetry.addEventListener('click', () => {
+      if (!state.lastImagePayload) return;
+      runRecognitionPipeline(state.lastImagePayload.base64, state.lastImagePayload.mimeType, false);
+    });
+
+    dom.btnForceCloudAI.addEventListener('click', () => {
+      if (!state.lastImagePayload) return;
+      runRecognitionPipeline(state.lastImagePayload.base64, state.lastImagePayload.mimeType, true);
     });
 
     dom.btnAIAddPlate.addEventListener('click', () => {
