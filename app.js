@@ -65,6 +65,7 @@
     dailyGoal: Number(localStorage.getItem(STORAGE_KEYS.GOAL)) || 1800,
     aiConfig: loadJSON(STORAGE_KEYS.AI_CONFIG, {
       provider: 'gemini',
+      geminiModel: 'gemini-3.8-flash',
       apiKey: '',
       baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       model: 'qwen-vl-plus'
@@ -230,6 +231,8 @@
     aiStatusPill: $('#ai-status-pill'),
     aiConfigPanel: $('#ai-config-panel'),
     aiProvider: $('#ai-provider'),
+    aiGeminiFields: $('#ai-gemini-fields'),
+    aiGeminiModel: $('#ai-gemini-model'),
     aiOpenAIFields: $('#ai-openai-fields'),
     aiBaseUrl: $('#ai-base-url'),
     aiModel: $('#ai-model'),
@@ -890,15 +893,18 @@
   // ==================== Sheet 3：📷 拍照识别食物 ====================
   function syncAIConfigUI() {
     const cfg = state.aiConfig;
+    const geminiModel = cfg.geminiModel || 'gemini-3.8-flash';
     dom.aiProvider.value = cfg.provider || 'gemini';
+    dom.aiGeminiModel.value = geminiModel;
     dom.aiBaseUrl.value = cfg.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
     dom.aiModel.value = cfg.model || 'qwen-vl-plus';
     dom.aiApiKey.value = cfg.apiKey || '';
+    dom.aiGeminiFields.classList.toggle('hidden', cfg.provider === 'openai');
     dom.aiOpenAIFields.classList.toggle('hidden', cfg.provider !== 'openai');
 
     if (cfg.apiKey) {
       dom.aiStatusPill.textContent = cfg.provider === 'gemini'
-        ? '已连接 Gemini 视觉识别'
+        ? `已连接 ${geminiModel}`
         : `已连接 ${cfg.model || 'OpenAI 兼容模型'}`;
       dom.cameraNoKeyTip.classList.add('hidden');
     } else {
@@ -980,13 +986,14 @@
   }
 
   async function callVisionModel(base64, mimeType) {
-    const { provider, apiKey, baseUrl, model } = state.aiConfig;
+    const { provider, geminiModel, apiKey, baseUrl, model } = state.aiConfig;
     if (!apiKey) {
       throw new Error('请先点击右上角 ⚙️ 配置你的 AI API Key');
     }
 
     if (provider === 'gemini') {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const targetModel = (geminiModel || 'gemini-3.8-flash').replace(/^models\//, '');
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1543,12 +1550,14 @@
     });
 
     dom.aiProvider.addEventListener('change', (e) => {
+      dom.aiGeminiFields.classList.toggle('hidden', e.target.value === 'openai');
       dom.aiOpenAIFields.classList.toggle('hidden', e.target.value !== 'openai');
     });
 
     dom.btnSaveAIConfig.addEventListener('click', () => {
       state.aiConfig = {
         provider: dom.aiProvider.value,
+        geminiModel: dom.aiGeminiModel.value.trim() || 'gemini-3.8-flash',
         apiKey: dom.aiApiKey.value.trim(),
         baseUrl: dom.aiBaseUrl.value.trim() || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         model: dom.aiModel.value.trim() || 'qwen-vl-plus'
