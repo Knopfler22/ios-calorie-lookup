@@ -125,21 +125,32 @@
       </section>
     </main>
 
-    <!-- ==================== 视图 3：今日餐盘 ==================== -->
+    <!-- ==================== 视图 3：餐盘与记录 ==================== -->
     <main id="view-plate" class="view">
       <header class="ios-header">
         <div class="header-top-row">
-          <h1 class="large-title">今日餐盘</h1>
+          <h1 class="large-title" id="plate-view-title">今日餐盘</h1>
           <div class="header-actions">
             <button id="btn-plate-camera" class="header-pill-btn primary-tint">📷 拍一餐</button>
             <button id="btn-edit-goal" class="header-pill-btn">🎯 目标</button>
             <button id="btn-clear-plate" class="header-pill-btn danger">清空</button>
           </div>
         </div>
+
+        <!-- 日期切换与历史记录条 -->
+        <div class="date-nav-bar">
+          <button id="btn-prev-day" class="date-nav-btn" aria-label="前一天">‹</button>
+          <button id="btn-pick-history" class="date-nav-center" title="查看历史记录">
+            <span id="plate-date-label">今天 · 11月21日</span>
+            <span class="date-caret">▾</span>
+          </button>
+          <button id="btn-next-day" class="date-nav-btn" aria-label="后一天" disabled>›</button>
+          <button id="btn-back-today" class="date-today-pill hidden">回今天</button>
+        </div>
       </header>
 
       <section class="content-scroll">
-        <!-- 今日热量总览卡片 -->
+        <!-- 热量与蛋白质总览卡片 -->
         <div class="ios-card summary-card">
           <div class="summary-top">
             <div class="ring-wrap">
@@ -155,7 +166,7 @@
 
             <div class="summary-stats">
               <div class="stat-row">
-                <span class="stat-label">每日目标</span>
+                <span class="stat-label">热量目标</span>
                 <button id="summary-goal-btn" class="stat-val-link">1800 kcal ✎</button>
               </div>
               <div class="stat-row">
@@ -169,7 +180,18 @@
             </div>
           </div>
 
-          <!-- 今日三大营养素 -->
+          <!-- 蛋白质目标进度条 -->
+          <div class="protein-goal-box">
+            <div class="protein-goal-header">
+              <span class="protein-goal-title">🥩 蛋白质进度 <strong id="plate-protein-progress-text">0 / 100g</strong></span>
+              <span id="plate-protein-pct" class="protein-goal-pct">0%</span>
+            </div>
+            <div class="protein-progress-track">
+              <div id="plate-protein-progress-fill" class="protein-progress-fill" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- 三大营养素供能占比 -->
           <div class="macro-summary">
             <div class="macro-bar-track">
               <div id="plate-bar-carbs" class="macro-seg carbs" style="width: 33%"></div>
@@ -326,9 +348,12 @@
           <button class="meal-chip" data-meal="dinner">🌙 晚餐</button>
           <button class="meal-chip" data-meal="snack">🍪 加餐</button>
         </div>
-        <button id="sheet-add-plate-btn" class="ios-btn-primary full-width">
-          加入今日餐盘（+<span id="sheet-add-kcal">174</span> kcal）
-        </button>
+        <div class="sheet-footer-actions">
+          <button id="sheet-delete-plate-btn" type="button" class="ios-btn-danger hidden">删除</button>
+          <button id="sheet-add-plate-btn" class="ios-btn-primary full-width">
+            <span id="sheet-add-btn-label">加入今日餐盘</span>（<span id="sheet-add-kcal">174</span> kcal）
+          </button>
+        </div>
       </div>
     </div>
 
@@ -401,9 +426,12 @@
       </form>
 
       <div class="sheet-footer">
-        <button id="cf-submit-btn" type="submit" form="custom-food-form" class="ios-btn-primary full-width">
-          保存到我的食物库
-        </button>
+        <div class="sheet-footer-actions">
+          <button id="cf-delete-btn" type="button" class="ios-btn-danger hidden">删除</button>
+          <button id="cf-submit-btn" type="submit" form="custom-food-form" class="ios-btn-primary full-width">
+            保存到我的食物库
+          </button>
+        </div>
       </div>
     </div>
 

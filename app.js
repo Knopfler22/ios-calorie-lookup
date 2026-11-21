@@ -7,7 +7,9 @@
     CUSTOM_FOODS: 'ios_cal_custom_foods_v1',
     PLATE: 'ios_cal_plate_v1',
     PLATE_DATE: 'ios_cal_plate_date_v1',
+    PLATE_HISTORY: 'ios_cal_plate_history_v1',
     GOAL: 'ios_cal_goal_v1',
+    PROTEIN_GOAL: 'ios_cal_protein_goal_v1',
     THEME: 'ios_cal_theme_v1',
     INSTALL_DISMISSED: 'ios_cal_install_dismissed_v1',
     AI_CONFIG: 'ios_cal_ai_config_v1'
@@ -22,6 +24,26 @@
   function getTodayStr() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function shiftDateStr(dateStr, deltaDays) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + deltaDays);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  }
+
+  function formatDateDisplay(dateStr) {
+    const today = getTodayStr();
+    const yesterday = shiftDateStr(today, -1);
+    const dayBefore = shiftDateStr(today, -2);
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const weekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const md = `${m}月${d}日`;
+    if (dateStr === today) return `今天 · ${md}`;
+    if (dateStr === yesterday) return `昨天 · ${md}`;
+    if (dateStr === dayBefore) return `前天 · ${md}`;
+    return `${md} ${weekNames[dt.getDay()]}`;
   }
 
   function getSmartDefaultMeal() {
@@ -41,15 +63,19 @@
     }
   }
 
-  function loadTodayPlate() {
-    const savedDate = localStorage.getItem(STORAGE_KEYS.PLATE_DATE);
-    const today = getTodayStr();
-    if (savedDate !== today) {
-      localStorage.setItem(STORAGE_KEYS.PLATE_DATE, today);
-      localStorage.setItem(STORAGE_KEYS.PLATE, '[]');
-      return [];
+  // 加载按日期分桶的餐盘历史，并自动无损迁移旧版单日数据
+  function loadPlateHistory() {
+    const history = loadJSON(STORAGE_KEYS.PLATE_HISTORY, {});
+    const legacyPlate = loadJSON(STORAGE_KEYS.PLATE, null);
+    if (Array.isArray(legacyPlate) && legacyPlate.length > 0) {
+      const legacyDate = localStorage.getItem(STORAGE_KEYS.PLATE_DATE) || getTodayStr();
+      if (!Array.isArray(history[legacyDate]) || history[legacyDate].length === 0) {
+        history[legacyDate] = legacyPlate;
+        localStorage.setItem(STORAGE_KEYS.PLATE_HISTORY, JSON.stringify(history));
+      }
+      localStorage.removeItem(STORAGE_KEYS.PLATE);
     }
-    return loadJSON(STORAGE_KEYS.PLATE, []);
+    return history;
   }
 
   // ==================== 应用状态 ====================
@@ -61,8 +87,10 @@
     listUnitMode: '100g', // '100g' | 'unit'
     customFoods: loadJSON(STORAGE_KEYS.CUSTOM_FOODS, []),
     favorites: loadJSON(STORAGE_KEYS.FAVORITES, ['egg', 'chicken-breast', 'rice', 'milk-tea']),
-    plateItems: loadTodayPlate(),
+    plateHistory: loadPlateHistory(),
+    plateDate: getTodayStr(),
     dailyGoal: Number(localStorage.getItem(STORAGE_KEYS.GOAL)) || 1800,
+    proteinGoal: Number(localStorage.getItem(STORAGE_KEYS.PROTEIN_GOAL)) || 100,
     aiConfig: loadJSON(STORAGE_KEYS.AI_CONFIG, {
       provider: 'gemini',
       geminiModel: 'gemini-3.8-flash',
@@ -74,12 +102,30 @@
       food: null,
       mode: 'unit',
       amount: 1,
-      meal: getSmartDefaultMeal()
+      meal: getSmartDefaultMeal(),
+      editingPlateUid: null
     },
     customFormEmoji: '🍱',
     lastAIResult: null,
     lastImagePayload: null
   };
+
+  function getPlateItemsForDate(dateStr) {
+    return Array.isArray(state.plateHistory[dateStr]) ? state.plateHistory[dateStr] : [];
+  }
+
+  function getCurrentPlateItems() {
+    return getPlateItemsForDate(state.plateDate);
+  }
+
+  function setPlateItemsForDate(dateStr, items) {
+    if (items.length === 0) {
+      delete state.plateHistory[dateStr];
+    } else {
+      state.plateHistory[dateStr] = items;
+    }
+    savePlate();
+  }
 
   function saveCustomFoods() {
     localStorage.setItem(STORAGE_KEYS.CUSTOM_FOODS, JSON.stringify(state.customFoods));
@@ -90,12 +136,12 @@
   }
 
   function savePlate() {
-    localStorage.setItem(STORAGE_KEYS.PLATE_DATE, getTodayStr());
-    localStorage.setItem(STORAGE_KEYS.PLATE, JSON.stringify(state.plateItems));
+    localStorage.setItem(STORAGE_KEYS.PLATE_HISTORY, JSON.stringify(state.plateHistory));
   }
 
   function saveGoal() {
     localStorage.setItem(STORAGE_KEYS.GOAL, String(state.dailyGoal));
+    localStorage.setItem(STORAGE_KEYS.PROTEIN_GOAL, String(state.proteinGoal));
   }
 
   function saveAIConfig() {
@@ -143,12 +189,22 @@
     btnGoLookup: $('#btn-go-lookup'),
 
     // Plate
+    plateViewTitle: $('#plate-view-title'),
+    btnPrevDay: $('#btn-prev-day'),
+    btnNextDay: $('#btn-next-day'),
+    btnPickHistory: $('#btn-pick-history'),
+    plateDateLabel: $('#plate-date-label'),
+    btnBackToday: $('#btn-back-today'),
     ringProgress: $('#ring-progress'),
     plateTotalKcal: $('#plate-total-kcal'),
     summaryGoalBtn: $('#summary-goal-btn'),
     remainLabel: $('#remain-label'),
     plateRemainKcal: $('#plate-remain-kcal'),
     plateItemCount: $('#plate-item-count'),
+    proteinGoalBox: $('.protein-goal-box'),
+    plateProteinProgressText: $('#plate-protein-progress-text'),
+    plateProteinPct: $('#plate-protein-pct'),
+    plateProteinProgressFill: $('#plate-protein-progress-fill'),
     plateBarCarbs: $('#plate-bar-carbs'),
     plateBarProtein: $('#plate-bar-protein'),
     plateBarFat: $('#plate-bar-fat'),
@@ -200,7 +256,9 @@
     sheetBarFat: $('#sheet-bar-fat'),
     sheetTip: $('#sheet-tip'),
     sheetMealPicker: $('#sheet-meal-picker'),
+    sheetDeletePlateBtn: $('#sheet-delete-plate-btn'),
     sheetAddPlateBtn: $('#sheet-add-plate-btn'),
+    sheetAddBtnLabel: $('#sheet-add-btn-label'),
     sheetAddKcal: $('#sheet-add-kcal'),
 
     // Custom Food Sheet
@@ -221,6 +279,7 @@
     cfUnitName: $('#cf-unit-name'),
     cfUnitGrams: $('#cf-unit-grams'),
     cfTip: $('#cf-tip'),
+    cfDeleteBtn: $('#cf-delete-btn'),
     cfSubmitBtn: $('#cf-submit-btn'),
 
     // Camera AI Sheet
@@ -342,7 +401,7 @@
   }
 
   // ==================== 渲染：食物列表行 ====================
-  function createFoodRowHTML(food) {
+  function createFoodRowHTML(food, context = 'lookup') {
     const level = getCalorieLevel(food.kcal);
     const isFav = state.favorites.includes(food.id);
     const isUnitMode = state.listUnitMode === 'unit';
@@ -357,7 +416,7 @@
       ? `约 ${food.unitGrams}g · 蛋白 ${((food.protein * food.unitGrams) / 100).toFixed(1)}g`
       : `${food.unitName}≈${food.unitGrams}g · 蛋白 ${food.protein}g`;
 
-    return `
+    const rowInner = `
       <div class="food-row" data-food-id="${food.id}">
         <div class="food-emoji-box">${food.emoji}</div>
         <div class="food-info">
@@ -374,8 +433,29 @@
             <div class="food-kcal-val ${level.key}">${displayKcal}</div>
             <div class="food-kcal-unit">${escapeHTML(displayUnit)}</div>
           </div>
-          <button class="quick-add-btn" data-quick-add="${food.id}" aria-label="快捷加入餐盘" title="快捷加入今日餐盘">+</button>
+          <button class="quick-add-btn" data-quick-add="${food.id}" aria-label="快捷加入餐盘" title="快捷加入餐盘">+</button>
         </div>
+      </div>
+    `;
+
+    // 根据上下文生成左滑按钮
+    const actions = [];
+    if (context === 'favorites') {
+      actions.push(`<button class="swipe-btn unfav" data-swipe-unfav="${food.id}">取消收藏</button>`);
+    }
+    if (food.isCustom && (context === 'lookup' || context === 'favorites')) {
+      actions.push(`<button class="swipe-btn edit" data-swipe-edit-food="${food.id}">编辑</button>`);
+      actions.push(`<button class="swipe-btn delete" data-swipe-delete-food="${food.id}">删除</button>`);
+    }
+
+    if (actions.length === 0) {
+      return rowInner;
+    }
+
+    return `
+      <div class="swipe-item">
+        <div class="swipe-actions">${actions.join('')}</div>
+        <div class="swipe-content">${rowInner}</div>
       </div>
     `;
   }
@@ -431,7 +511,7 @@
 
     dom.lookupEmpty.classList.add('hidden');
     dom.foodList.classList.remove('hidden');
-    dom.foodList.innerHTML = foods.map(createFoodRowHTML).join('');
+    dom.foodList.innerHTML = foods.map((f) => createFoodRowHTML(f, 'lookup')).join('');
   }
 
   // ==================== 渲染：收藏列表 ====================
@@ -450,17 +530,27 @@
 
     dom.favoritesEmpty.classList.add('hidden');
     dom.favoritesList.classList.remove('hidden');
-    dom.favoritesList.innerHTML = favFoods.map(createFoodRowHTML).join('');
+    dom.favoritesList.innerHTML = favFoods.map((f) => createFoodRowHTML(f, 'favorites')).join('');
   }
 
-  // ==================== 渲染：今日餐盘 ====================
+  // ==================== 渲染：餐盘与历史 ====================
   function renderPlate() {
+    const today = getTodayStr();
+    const isToday = state.plateDate === today;
+    const currentItems = getCurrentPlateItems();
+
+    // 顶部日期栏更新
+    dom.plateViewTitle.textContent = isToday ? '今日餐盘' : '历史餐盘';
+    dom.plateDateLabel.textContent = formatDateDisplay(state.plateDate);
+    dom.btnNextDay.disabled = isToday;
+    dom.btnBackToday.classList.toggle('hidden', isToday);
+
     let totalKcal = 0;
     let totalCarbs = 0;
     let totalProtein = 0;
     let totalFat = 0;
 
-    const enriched = state.plateItems.map((item) => {
+    const enriched = currentItems.map((item) => {
       const food = getFoodById(item.foodId) || item.snapshot;
       if (!food) return null;
       const nut = calcNutrition(food, item.grams);
@@ -468,9 +558,10 @@
       totalCarbs += nut.carbs;
       totalProtein += nut.protein;
       totalFat += nut.fat;
-      return { ...item, food, nut, existsInDb: Boolean(getFoodById(item.foodId)) };
+      return { ...item, food, nut };
     }).filter(Boolean);
 
+    // 热量环形进度条
     const circumference = 2 * Math.PI * 50;
     const ratio = state.dailyGoal > 0 ? totalKcal / state.dailyGoal : 0;
     const clampedRatio = Math.min(ratio, 1);
@@ -499,6 +590,17 @@
       dom.plateRemainKcal.classList.add('over');
     }
 
+    // 蛋白质目标进度条
+    const pGoal = Math.max(1, state.proteinGoal);
+    const pPct = Math.round((totalProtein / pGoal) * 100);
+    const pReached = totalProtein >= pGoal;
+    dom.plateProteinProgressText.textContent = `${totalProtein.toFixed(1)} / ${pGoal}g`;
+    dom.plateProteinPct.textContent = pReached ? `✓ 已达标 (${pPct}%)` : `${pPct}%`;
+    dom.plateProteinPct.classList.toggle('reached', pReached);
+    dom.plateProteinProgressFill.style.width = `${Math.min(100, pPct)}%`;
+    dom.plateProteinProgressFill.classList.toggle('reached', pReached);
+
+    // 三大营养素供能占比
     dom.plateTotalCarbs.textContent = `${totalCarbs.toFixed(1)}g`;
     dom.plateTotalProtein.textContent = `${totalProtein.toFixed(1)}g`;
     dom.plateTotalFat.textContent = `${totalFat.toFixed(1)}g`;
@@ -525,6 +627,9 @@
     if (enriched.length === 0) {
       dom.plateMealsContainer.innerHTML = '';
       dom.plateEmpty.classList.remove('hidden');
+      dom.plateEmpty.querySelector('h3').textContent = isToday
+        ? '今日餐盘还是空的'
+        : `${formatDateDisplay(state.plateDate)} 暂无记录`;
       return;
     }
 
@@ -534,20 +639,28 @@
       const items = enriched.filter((it) => it.meal === meal.id);
       if (items.length === 0) return '';
       const mealKcal = items.reduce((sum, it) => sum + it.nut.kcal, 0);
+      const mealProtein = items.reduce((sum, it) => sum + it.nut.protein, 0);
 
       const rowsHTML = items.map((it) => `
-        <div class="plate-row">
-          <div class="food-emoji-box">${it.food.emoji || '🍽️'}</div>
-          <div class="food-info" ${it.existsInDb ? `data-open-food="${it.foodId}" style="cursor:pointer;"` : ''}>
-            <div class="food-name">${escapeHTML(it.food.name)}</div>
-            <div class="food-sub">${escapeHTML(it.label)}（${Math.round(it.grams)}g）· 蛋${it.nut.protein}g</div>
+        <div class="swipe-item">
+          <div class="swipe-actions">
+            <button class="swipe-btn edit" data-edit-plate="${it.uid}">改份量</button>
+            <button class="swipe-btn delete" data-delete-plate="${it.uid}">删除</button>
           </div>
-          <div class="food-right">
-            <div class="food-kcal-col">
-              <div class="food-kcal-val">${it.nut.kcal}</div>
-              <div class="food-kcal-unit">kcal</div>
+          <div class="swipe-content">
+            <div class="plate-row" data-edit-plate="${it.uid}" style="cursor:pointer;">
+              <div class="food-emoji-box">${it.food.emoji || '🍽️'}</div>
+              <div class="food-info">
+                <div class="food-name">${escapeHTML(it.food.name)}</div>
+                <div class="food-sub">${escapeHTML(it.label)}（${Math.round(it.grams)}g）· 蛋${it.nut.protein}g · 点击改份量</div>
+              </div>
+              <div class="food-right">
+                <div class="food-kcal-col">
+                  <div class="food-kcal-val">${it.nut.kcal}</div>
+                  <div class="food-kcal-unit">kcal</div>
+                </div>
+              </div>
             </div>
-            <button class="plate-delete-btn" data-delete-plate="${it.uid}" aria-label="删除">✕</button>
           </div>
         </div>
       `).join('');
@@ -556,7 +669,7 @@
         <div class="meal-section">
           <div class="meal-section-header">
             <span>${meal.icon} ${meal.name}</span>
-            <span>${mealKcal} kcal</span>
+            <span>${mealKcal} kcal · 蛋 ${mealProtein.toFixed(1)}g</span>
           </div>
           <div class="ios-inset-list">${rowsHTML}</div>
         </div>
@@ -575,8 +688,9 @@
       dom.badgeFavorites.classList.add('hidden');
     }
 
-    if (state.plateItems.length > 0) {
-      dom.badgePlate.textContent = state.plateItems.length;
+    const todayCount = getPlateItemsForDate(getTodayStr()).length;
+    if (todayCount > 0) {
+      dom.badgePlate.textContent = todayCount;
       dom.badgePlate.classList.remove('hidden');
     } else {
       dom.badgePlate.classList.add('hidden');
@@ -623,16 +737,67 @@
     }, 300);
   }
 
-  // ==================== Sheet 1：食物详情 ====================
+  // ==================== Sheet 1：食物详情 / 编辑餐盘份量 ====================
   function openFoodSheet(foodId) {
     const food = getFoodById(foodId);
     if (!food) return;
 
     state.sheet.food = food;
+    state.sheet.editingPlateUid = null;
     state.sheet.mode = state.listUnitMode === '100g' ? 'gram' : 'unit';
     state.sheet.amount = state.sheet.mode === 'gram' ? 100 : 1;
     state.sheet.meal = getSmartDefaultMeal();
 
+    const isToday = state.plateDate === getTodayStr();
+    dom.sheetDeletePlateBtn.classList.add('hidden');
+    dom.sheetAddBtnLabel.textContent = isToday ? '加入今日餐盘' : `补录到 ${formatDateDisplay(state.plateDate)}`;
+
+    populateFoodSheetUI(food, true);
+    showSheet(dom.detailBackdrop, dom.detailSheet);
+  }
+
+  function openEditPlateSheet(uid) {
+    const items = getCurrentPlateItems();
+    const item = items.find((it) => it.uid === uid);
+    if (!item) return;
+
+    const dbFood = getFoodById(item.foodId);
+    const food = dbFood || {
+      id: item.foodId,
+      name: item.snapshot?.name || '记录食物',
+      emoji: item.snapshot?.emoji || '🍽️',
+      kcal: item.snapshot?.kcal || 0,
+      carbs: item.snapshot?.carbs || 0,
+      protein: item.snapshot?.protein || 0,
+      fat: item.snapshot?.fat || 0,
+      unitName: '1份',
+      unitGrams: Math.max(10, Math.round(item.grams || 100)),
+      tip: '修改克数、份数或餐次后点击保存，即可原地更新本条记录。'
+    };
+
+    state.sheet.food = food;
+    state.sheet.editingPlateUid = uid;
+    state.sheet.meal = item.meal || getSmartDefaultMeal();
+
+    // 若克数刚好是常见份量的 0.5 倍数，优先按份数显示；否则按克数显示
+    const units = food.unitGrams > 0 ? item.grams / food.unitGrams : 0;
+    const roundedHalf = Math.round(units * 2) / 2;
+    if (dbFood && roundedHalf >= 0.5 && Math.abs(units - roundedHalf) < 0.05) {
+      state.sheet.mode = 'unit';
+      state.sheet.amount = roundedHalf;
+    } else {
+      state.sheet.mode = 'gram';
+      state.sheet.amount = Math.round(item.grams);
+    }
+
+    dom.sheetDeletePlateBtn.classList.remove('hidden');
+    dom.sheetAddBtnLabel.textContent = '保存份量修改';
+
+    populateFoodSheetUI(food, Boolean(dbFood));
+    showSheet(dom.detailBackdrop, dom.detailSheet);
+  }
+
+  function populateFoodSheetUI(food, existsInDb) {
     const level = getCalorieLevel(food.kcal);
     dom.sheetEmoji.textContent = food.emoji;
     dom.sheetFoodName.textContent = food.name;
@@ -641,6 +806,7 @@
     dom.sheetCustomBadge.classList.toggle('hidden', !food.isCustom);
     dom.sheetEditBtn.classList.toggle('hidden', !food.isCustom);
     dom.sheetDeleteBtn.classList.toggle('hidden', !food.isCustom);
+    dom.sheetFavBtn.classList.toggle('hidden', !existsInDb);
     dom.sheetBaseInfo.textContent = `${food.kcal} kcal / 100g`;
     dom.sheetModeUnitBtn.textContent = `${food.unitName} (${food.unitGrams}g)`;
     dom.sheetTip.textContent = food.tip || '自定义录入食物，建议结合包装营养成分表参考。';
@@ -649,8 +815,6 @@
     updateSheetModeUI();
     updateSheetMealUI();
     updateSheetCalculations();
-
-    showSheet(dom.detailBackdrop, dom.detailSheet);
   }
 
   function closeFoodSheet() {
@@ -761,6 +925,7 @@
     const isEdit = Boolean(prefill.id);
     dom.customSheetTitle.textContent = isEdit ? '编辑自定义食物' : '补充未知食物';
     dom.cfSubmitBtn.textContent = isEdit ? '保存修改' : '保存到我的食物库';
+    dom.cfDeleteBtn.classList.toggle('hidden', !isEdit);
 
     dom.cfId.value = prefill.id || '';
     state.customFormEmoji = prefill.emoji || '🍱';
@@ -1289,7 +1454,7 @@
 
     const matches = findSimilarLocalFoods(result.name);
     if (matches.length > 0) {
-      dom.aiLocalMatchesList.innerHTML = matches.map(createFoodRowHTML).join('');
+      dom.aiLocalMatchesList.innerHTML = matches.map((f) => createFoodRowHTML(f, 'plain')).join('');
       dom.aiLocalMatches.classList.remove('hidden');
     } else {
       dom.aiLocalMatches.classList.add('hidden');
@@ -1382,7 +1547,8 @@
     if (!food || grams <= 0) return;
 
     const nut = calcNutrition(food, grams);
-    state.plateItems.push({
+    const items = [...getCurrentPlateItems()];
+    items.push({
       uid: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       foodId,
       meal: meal || getSmartDefaultMeal(),
@@ -1398,11 +1564,28 @@
       },
       addedAt: Date.now()
     });
-    savePlate();
+    setPlateItemsForDate(state.plateDate, items);
     renderPlate();
 
     const mealObj = MEAL_TYPES.find((m) => m.id === (meal || getSmartDefaultMeal()));
-    showToast(`✓ 已加入${mealObj ? mealObj.name : '餐盘'} · +${nut.kcal} kcal`);
+    const dayTag = state.plateDate === getTodayStr() ? '' : `${formatDateDisplay(state.plateDate)} `;
+    showToast(`✓ 已加入${dayTag}${mealObj ? mealObj.name : '餐盘'} · +${nut.kcal} kcal`);
+  }
+
+  function updatePlateItem(uid, grams, label, meal) {
+    const items = [...getCurrentPlateItems()];
+    const idx = items.findIndex((it) => it.uid === uid);
+    if (idx < 0 || grams <= 0) return;
+
+    items[idx] = {
+      ...items[idx],
+      grams,
+      label,
+      meal: meal || items[idx].meal
+    };
+    setPlateItemsForDate(state.plateDate, items);
+    renderPlate();
+    showToast('✓ 已更新份量与餐次');
   }
 
   function quickAddFood(foodId) {
@@ -1415,10 +1598,10 @@
   }
 
   function removeFromPlate(uid) {
-    state.plateItems = state.plateItems.filter((it) => it.uid !== uid);
-    savePlate();
+    const next = getCurrentPlateItems().filter((it) => it.uid !== uid);
+    setPlateItemsForDate(state.plateDate, next);
     renderPlate();
-    showToast('已从今日餐盘移除');
+    showToast('已从餐盘移除');
   }
 
   // ==================== 通用 iOS Modal ====================
@@ -1466,42 +1649,60 @@
   }
 
   function showGoalModal() {
-    const presets = [
+    const kcalPresets = [
       { label: '减脂 1400', val: 1400 },
-      { label: '轻减 1600', val: 1600 },
       { label: '标准 1800', val: 1800 },
-      { label: '维持 2000', val: 2000 },
-      { label: '增肌 2300', val: 2300 },
-      { label: '高耗 2600', val: 2600 }
+      { label: '增肌 2300', val: 2300 }
+    ];
+    const proteinPresets = [
+      { label: '日常 75g', val: 75 },
+      { label: '减脂 100g', val: 100 },
+      { label: '增肌 140g', val: 140 }
     ];
 
     openModal({
-      title: '🎯 设置每日目标热量',
+      title: '🎯 设置每日营养目标',
       html: `
-        <p style="margin:0 0 8px;text-align:center;">选择推荐方案或输入自定义热量（kcal）</p>
+        <div class="goal-section-label">🔥 每日热量目标（kcal）</div>
         <div class="goal-presets">
-          ${presets.map((p) => `
+          ${kcalPresets.map((p) => `
             <button type="button" class="goal-preset-btn ${state.dailyGoal === p.val ? 'active' : ''}" data-goal-preset="${p.val}">
               ${p.label}
             </button>
           `).join('')}
         </div>
-        <input id="goal-custom-input" class="goal-input" type="number" inputmode="numeric" min="800" max="5000" step="50" value="${state.dailyGoal}" />
+        <input id="goal-custom-input" class="goal-input" type="number" inputmode="numeric" min="500" max="8000" step="50" value="${state.dailyGoal}" />
+
+        <div class="goal-section-label">🥩 每日蛋白质目标（g）</div>
+        <div class="goal-presets">
+          ${proteinPresets.map((p) => `
+            <button type="button" class="goal-preset-btn ${state.proteinGoal === p.val ? 'active' : ''}" data-protein-preset="${p.val}">
+              ${p.label}
+            </button>
+          `).join('')}
+        </div>
+        <input id="protein-goal-input" class="goal-input" type="number" inputmode="numeric" min="20" max="400" step="5" value="${state.proteinGoal}" />
       `,
       actions: [
         { text: '取消', cls: 'cancel' },
         {
           text: '保存',
           onClick: () => {
-            const val = Math.round(Number($('#goal-custom-input').value));
-            if (!val || val < 500 || val > 8000) {
-              showToast('请输入 500 ~ 8000 之间的目标值');
+            const kcalVal = Math.round(Number($('#goal-custom-input').value));
+            const protVal = Math.round(Number($('#protein-goal-input').value));
+            if (!kcalVal || kcalVal < 500 || kcalVal > 8000) {
+              showToast('请输入 500 ~ 8000 之间的热量目标');
               return false;
             }
-            state.dailyGoal = val;
+            if (!protVal || protVal < 20 || protVal > 400) {
+              showToast('请输入 20 ~ 400g 之间的蛋白质目标');
+              return false;
+            }
+            state.dailyGoal = kcalVal;
+            state.proteinGoal = protVal;
             saveGoal();
             renderPlate();
-            showToast(`🎯 每日目标已更新为 ${val} kcal`);
+            showToast(`🎯 目标已更新：${kcalVal} kcal · 蛋白 ${protVal}g`);
           }
         }
       ]
@@ -1516,26 +1717,94 @@
         );
       });
     });
+
+    dom.modalContent.querySelectorAll('[data-protein-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const val = Number(btn.dataset.proteinPreset);
+        $('#protein-goal-input').value = val;
+        dom.modalContent.querySelectorAll('[data-protein-preset]').forEach((b) =>
+          b.classList.toggle('active', b === btn)
+        );
+      });
+    });
+  }
+
+  function showHistoryModal() {
+    const today = getTodayStr();
+    const dates = Object.keys(state.plateHistory)
+      .filter((d) => Array.isArray(state.plateHistory[d]) && state.plateHistory[d].length > 0)
+      .sort((a, b) => b.localeCompare(a));
+
+    if (!dates.includes(today)) dates.unshift(today);
+
+    const listHTML = dates.map((d) => {
+      const items = getPlateItemsForDate(d);
+      let kcal = 0;
+      let prot = 0;
+      items.forEach((it) => {
+        const food = getFoodById(it.foodId) || it.snapshot;
+        if (!food) return;
+        const nut = calcNutrition(food, it.grams);
+        kcal += nut.kcal;
+        prot += nut.protein;
+      });
+      return `
+        <button type="button" class="history-date-row ${d === state.plateDate ? 'active' : ''}" data-pick-date="${d}">
+          <span>${formatDateDisplay(d)}</span>
+          <span class="history-date-meta">${items.length > 0 ? `${kcal} kcal · 蛋 ${prot.toFixed(0)}g` : '暂无记录'}</span>
+        </button>
+      `;
+    }).join('');
+
+    openModal({
+      title: '📅 餐盘历史记录',
+      html: `
+        <div class="history-date-list">${listHTML}</div>
+        <div class="goal-section-label">或跳转到任意日期</div>
+        <input id="history-date-picker" class="ios-input" type="date" max="${today}" value="${state.plateDate}" />
+      `,
+      actions: [{ text: '关闭' }]
+    });
+
+    dom.modalContent.querySelectorAll('[data-pick-date]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.plateDate = btn.dataset.pickDate;
+        renderPlate();
+        closeModal();
+      });
+    });
+
+    const picker = $('#history-date-picker');
+    if (picker) {
+      picker.addEventListener('change', (e) => {
+        if (e.target.value && e.target.value <= today) {
+          state.plateDate = e.target.value;
+          renderPlate();
+          closeModal();
+        }
+      });
+    }
   }
 
   function showClearPlateConfirm() {
-    if (state.plateItems.length === 0) {
-      showToast('今日餐盘已经是空的啦');
+    const items = getCurrentPlateItems();
+    const label = formatDateDisplay(state.plateDate);
+    if (items.length === 0) {
+      showToast(`${label} 餐盘已经是空的啦`);
       return;
     }
     openModal({
-      title: '清空今日餐盘？',
-      html: '<p style="margin:0;text-align:center;">将移除今天已记录的全部食物，此操作不可撤销。</p>',
+      title: `清空 ${label} 记录？`,
+      html: `<p style="margin:0;text-align:center;">将移除 ${label} 已记录的全部食物（其他日期的历史记录不受影响）。</p>`,
       actions: [
         { text: '取消', cls: 'cancel' },
         {
           text: '确认清空',
           cls: 'danger',
           onClick: () => {
-            state.plateItems = [];
-            savePlate();
+            setPlateItemsForDate(state.plateDate, []);
             renderPlate();
-            showToast('已清空今日餐盘');
+            showToast(`已清空 ${label} 餐盘`);
           }
         }
       ]
@@ -1626,9 +1895,33 @@
       });
     });
 
-    // 列表点击（含 AI 本地相似列表）
+    // 列表点击（含左滑操作与 AI 本地相似列表）
     [dom.foodList, dom.favoritesList, dom.aiLocalMatchesList].forEach((listEl) => {
       listEl.addEventListener('click', (e) => {
+        if (Date.now() < swipeSuppressClickUntil) return;
+
+        const unfavBtn = e.target.closest('[data-swipe-unfav]');
+        if (unfavBtn) {
+          e.stopPropagation();
+          closeAllSwipes();
+          toggleFavorite(unfavBtn.dataset.swipeUnfav);
+          return;
+        }
+        const editFoodBtn = e.target.closest('[data-swipe-edit-food]');
+        if (editFoodBtn) {
+          e.stopPropagation();
+          closeAllSwipes();
+          const food = getFoodById(editFoodBtn.dataset.swipeEditFood);
+          if (food) openCustomFoodSheet(food);
+          return;
+        }
+        const delFoodBtn = e.target.closest('[data-swipe-delete-food]');
+        if (delFoodBtn) {
+          e.stopPropagation();
+          closeAllSwipes();
+          deleteCustomFood(delFoodBtn.dataset.swipeDeleteFood);
+          return;
+        }
         const quickBtn = e.target.closest('[data-quick-add]');
         if (quickBtn) {
           e.stopPropagation();
@@ -1637,6 +1930,10 @@
         }
         const row = e.target.closest('.food-row');
         if (row) {
+          if (openSwipeItem) {
+            closeAllSwipes();
+            return;
+          }
           if (listEl === dom.aiLocalMatchesList) closeCameraSheet();
           openFoodSheet(row.dataset.foodId);
         }
@@ -1650,20 +1947,52 @@
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // 餐盘页
+    // 餐盘页（日期切换 / 目标 / 蛋白质进度 / 改份量 / 删除）
+    dom.btnPrevDay.addEventListener('click', () => {
+      state.plateDate = shiftDateStr(state.plateDate, -1);
+      renderPlate();
+    });
+
+    dom.btnNextDay.addEventListener('click', () => {
+      const next = shiftDateStr(state.plateDate, 1);
+      if (next <= getTodayStr()) {
+        state.plateDate = next;
+        renderPlate();
+      }
+    });
+
+    dom.btnPickHistory.addEventListener('click', showHistoryModal);
+
+    dom.btnBackToday.addEventListener('click', () => {
+      state.plateDate = getTodayStr();
+      renderPlate();
+    });
+
     dom.btnEditGoal.addEventListener('click', showGoalModal);
     dom.summaryGoalBtn.addEventListener('click', showGoalModal);
+    if (dom.proteinGoalBox) {
+      dom.proteinGoalBox.addEventListener('click', showGoalModal);
+    }
     dom.btnClearPlate.addEventListener('click', showClearPlateConfirm);
 
     dom.plateMealsContainer.addEventListener('click', (e) => {
+      if (Date.now() < swipeSuppressClickUntil) return;
+
       const delBtn = e.target.closest('[data-delete-plate]');
       if (delBtn) {
+        e.stopPropagation();
+        closeAllSwipes();
         removeFromPlate(delBtn.dataset.deletePlate);
         return;
       }
-      const openInfo = e.target.closest('[data-open-food]');
-      if (openInfo) {
-        openFoodSheet(openInfo.dataset.openFood);
+      const editBtn = e.target.closest('[data-edit-plate]');
+      if (editBtn) {
+        if (openSwipeItem && !editBtn.classList.contains('swipe-btn')) {
+          closeAllSwipes();
+          return;
+        }
+        closeAllSwipes();
+        openEditPlateSheet(editBtn.dataset.editPlate);
       }
     });
 
@@ -1735,6 +2064,13 @@
       updateSheetMealUI();
     });
 
+    dom.sheetDeletePlateBtn.addEventListener('click', () => {
+      if (state.sheet.editingPlateUid) {
+        removeFromPlate(state.sheet.editingPlateUid);
+        closeFoodSheet();
+      }
+    });
+
     dom.sheetAddPlateBtn.addEventListener('click', () => {
       const food = state.sheet.food;
       const grams = getSheetGrams();
@@ -1745,7 +2081,12 @@
       const label = state.sheet.mode === 'unit'
         ? `${state.sheet.amount} × ${food.unitName}`
         : `${Math.round(grams)}g`;
-      addToPlate(food.id, grams, label, state.sheet.meal);
+
+      if (state.sheet.editingPlateUid) {
+        updatePlateItem(state.sheet.editingPlateUid, grams, label, state.sheet.meal);
+      } else {
+        addToPlate(food.id, grams, label, state.sheet.meal);
+      }
       closeFoodSheet();
     });
 
@@ -1753,6 +2094,14 @@
     dom.customBackdrop.addEventListener('click', closeCustomFoodSheet);
     dom.customCloseBtn.addEventListener('click', closeCustomFoodSheet);
     dom.customGrabber.addEventListener('click', closeCustomFoodSheet);
+
+    dom.cfDeleteBtn.addEventListener('click', () => {
+      const editId = dom.cfId.value;
+      if (editId) {
+        closeCustomFoodSheet();
+        setTimeout(() => deleteCustomFood(editId), 200);
+      }
+    });
 
     dom.cfEmojiPicker.addEventListener('click', (e) => {
       const btn = e.target.closest('.emoji-opt');
@@ -1882,6 +2231,118 @@
     }
   }
 
+  // ==================== 原生感左滑手势引擎 (iOS Swipe Actions) ====================
+  let openSwipeItem = null;
+  let swipeSuppressClickUntil = 0;
+
+  function closeAllSwipes(exceptItem = null) {
+    if (openSwipeItem && openSwipeItem !== exceptItem) {
+      const content = openSwipeItem.querySelector('.swipe-content');
+      if (content) content.style.transform = 'translateX(0)';
+      openSwipeItem = null;
+    }
+  }
+
+  function initSwipeGestures() {
+    const shell = $('.app-shell');
+    if (!shell) return;
+
+    let activeItem = null;
+    let activeContent = null;
+    let actionsWidth = 0;
+    let startX = 0;
+    let startY = 0;
+    let baseOffset = 0;
+    let currentOffset = 0;
+    let isHorizontal = null;
+
+    const getPoint = (e) => (e.touches ? e.touches[0] : e);
+
+    const onStart = (e) => {
+      const item = e.target.closest('.swipe-item');
+      if (!item || e.target.closest('.swipe-actions')) return;
+
+      closeAllSwipes(item);
+      const pt = getPoint(e);
+      activeItem = item;
+      activeContent = item.querySelector('.swipe-content');
+      const actionsEl = item.querySelector('.swipe-actions');
+      actionsWidth = actionsEl ? actionsEl.offsetWidth : 72;
+      startX = pt.clientX;
+      startY = pt.clientY;
+      baseOffset = (openSwipeItem === item) ? -actionsWidth : 0;
+      currentOffset = baseOffset;
+      isHorizontal = null;
+    };
+
+    const onMove = (e) => {
+      if (!activeItem || !activeContent) return;
+      const pt = getPoint(e);
+      const dx = pt.clientX - startX;
+      const dy = pt.clientY - startY;
+
+      if (isHorizontal === null) {
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        isHorizontal = Math.abs(dx) > Math.abs(dy) * 1.15;
+        if (!isHorizontal) {
+          activeItem = null;
+          activeContent = null;
+          return;
+        }
+        activeContent.classList.add('dragging');
+      }
+
+      if (isHorizontal) {
+        if (e.cancelable) e.preventDefault();
+        let next = baseOffset + dx;
+        if (next > 0) next = 0;
+        if (next < -actionsWidth - 18) next = -actionsWidth - 18;
+        currentOffset = next;
+        activeContent.style.transform = `translateX(${currentOffset}px)`;
+      }
+    };
+
+    const onEnd = () => {
+      if (!activeItem || !activeContent) return;
+      activeContent.classList.remove('dragging');
+      if (isHorizontal) {
+        swipeSuppressClickUntil = Date.now() + 180;
+        if (currentOffset < -Math.min(44, actionsWidth * 0.45)) {
+          activeContent.style.transform = `translateX(-${actionsWidth}px)`;
+          openSwipeItem = activeItem;
+        } else {
+          activeContent.style.transform = 'translateX(0)';
+          if (openSwipeItem === activeItem) openSwipeItem = null;
+        }
+      }
+      activeItem = null;
+      activeContent = null;
+      isHorizontal = null;
+    };
+
+    shell.addEventListener('touchstart', onStart, { passive: true });
+    shell.addEventListener('touchmove', onMove, { passive: false });
+    shell.addEventListener('touchend', onEnd, { passive: true });
+    shell.addEventListener('touchcancel', onEnd, { passive: true });
+
+    // 桌面鼠标预览兼容
+    let mouseDown = false;
+    shell.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      mouseDown = true;
+      onStart(e);
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (mouseDown) onMove(e);
+    });
+    window.addEventListener('mouseup', () => {
+      if (mouseDown) {
+        mouseDown = false;
+        onEnd();
+      }
+    });
+  }
+
   // ==================== 启动初始化 ====================
   function init() {
     initTheme();
@@ -1893,6 +2354,7 @@
     renderFavoritesList();
     renderPlate();
     bindEvents();
+    initSwipeGestures();
   }
 
   init();
