@@ -293,7 +293,17 @@ const FOOD_DATABASE = [
   f('latiao', '辣条 / 大面筋', 'latiao weilong 零食', 'snack', '🌶️', 430, 52.0, 7.5, 21.5, '1小包', 50, '高油高盐高碳水，一小包热量超过 210 kcal，还容易引发水肿。'),
   f('ice-cream', '奶油冰淇淋 / 雪糕', 'bingqilin xuegao 甜筒 梦龙 甜品', 'snack', '🍦', 215, 24.5, 3.5, 11.5, '1支', 80, '夏天解馋可以选老冰棍或纯果汁冰棒（约 70-90 kcal/支）。'),
   f('popsicle', '老冰棍 / 绿豆冰棒', 'laobinggun bingbang 雪糕 零食', 'snack', '🍧', 98, 24.0, 0.5, 0.2, '1支', 75, '几乎零脂肪，一支仅约 74 kcal，夏日解暑无压力。'),
-  f('protein-bar', '低糖蛋白棒', 'danbaibang 健身 减脂 零食 高蛋白', 'snack', '🍫', 355, 32.0, 30.0, 11.5, '1根', 50, '1 根约 178 kcal 含 15g 蛋白，加班或运动前后垫肚子很方便。')
+  f('protein-bar', '低糖蛋白棒', 'danbaibang 健身 减脂 零食 高蛋白', 'snack', '🍫', 355, 32.0, 30.0, 11.5, '1根', 50, '1 根约 178 kcal 含 15g 蛋白，加班或运动前后垫肚子很方便。'),
+
+  // ==================== 9. 高频烹调油/糖/酱料（拼菜必备） ====================
+  f('cooking-oil', '烹调植物油 / 食用油', 'you shiyongyou zhiwuyou huashengyou 油 炒菜 调料', 'snack', '🫗', 899, 0.0, 0.0, 99.9, '1勺', 10, '组合菜热量变量之王！1 平瓷勺约 10g = 90 kcal，炒菜尽量用勺量不要拿瓶倒。'),
+  f('olive-oil', '特级初榨橄榄油', 'ganlanyou you 油 调料 减脂', 'snack', '🫒', 884, 0.0, 0.0, 100.0, '1勺', 10, '富含单不饱和脂肪酸，虽是好油但热量与其他油相同（1勺≈88 kcal），仍需控量。'),
+  f('white-sugar', '白砂糖 / 冰糖', 'tang baishatang bingtang 糖 调料', 'snack', '🧂', 400, 99.9, 0.0, 0.0, '1小勺', 5, '1 小勺约 5g = 20 kcal，很多家常菜（番茄炒蛋、红烧、糖醋）会悄悄放不少糖。'),
+  f('soy-sauce', '生抽 / 酱油', 'shengchou jiangyou 调料 酱油', 'snack', '🫙', 63, 9.8, 5.6, 0.1, '1勺', 15, '1 勺仅约 9 kcal，几乎零脂肪，但含钠较高注意控盐。'),
+  f('oyster-sauce', '蚝油', 'haoyou 调料 酱', 'snack', '🫙', 114, 24.0, 3.8, 0.3, '1勺', 15, '1 勺约 17 kcal，提鲜好帮手，比芝麻酱/沙拉酱低卡得多。'),
+  f('sesame-paste', '纯芝麻酱 / 花生酱', 'zhimajiang huashengjiang majiang 麻酱 调料 火锅', 'snack', '🥜', 625, 16.0, 20.5, 53.0, '1勺', 15, '1 勺麻酱 ≈ 94 kcal，吃火锅/麻辣烫/拌面时一碗麻酱碟轻松 250+ kcal。'),
+  f('mayo', '沙拉酱 / 蛋黄酱', 'shalajiang danhuangjiang 调料 轻食', 'snack', '🧴', 715, 2.5, 1.2, 78.0, '1勺', 15, '油蛋乳化而成，1 勺就超 100 kcal，吃轻食沙拉优先换油醋汁。'),
+  f('vinaigrette', '油醋汁（0脂/低脂）', 'youcuzhi shala 调料 减脂 轻食', 'snack', '🥗', 38, 6.5, 0.5, 1.0, '1袋/2勺', 30, '减脂沙拉灵魂伴侣，1 份 30g 仅约 11 kcal。')
 ];
 
 // ==================== 融合《中国食物成分表标准版(第6版)》全量国标库 ====================
@@ -301,13 +311,13 @@ if (typeof CHINA_FOOD_COMP_RAW !== 'undefined' && Array.isArray(CHINA_FOOD_COMP_
   const existingNames = new Set(FOOD_DATABASE.map((x) => x.name.trim()));
   for (let i = 0; i < CHINA_FOOD_COMP_RAW.length; i++) {
     const row = CHINA_FOOD_COMP_RAW[i];
-    const [code, name, category, emoji, kcal, carbs, protein, fat, sublabel, tip] = row;
+    const [code, name, category, emoji, kcal, carbs, protein, fat, sublabel, tip, pinyin] = row;
     if (!name || existingNames.has(name.trim())) continue;
     existingNames.add(name.trim());
     FOOD_DATABASE.push({
       id: `cfcd_${code}`,
       name,
-      alias: `国标 标准版 ${sublabel} ${code}`,
+      alias: `${pinyin || ''} 国标 标准版 ${sublabel} ${code}`.trim(),
       category,
       emoji,
       kcal,

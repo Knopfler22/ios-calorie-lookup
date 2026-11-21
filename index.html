@@ -150,8 +150,9 @@
         <div class="header-top-row">
           <h1 class="large-title" id="plate-view-title">今日餐盘</h1>
           <div class="header-actions">
-            <button id="btn-plate-camera" class="header-pill-btn primary-tint">📷 拍一餐</button>
-            <button id="btn-edit-goal" class="header-pill-btn">🎯 目标</button>
+            <button id="btn-save-recipe" class="header-pill-btn primary-tint" title="将当前餐盘原料存为菜谱">📖 存菜谱</button>
+            <button id="btn-plate-camera" class="header-icon-btn" title="拍照识图">📷</button>
+            <button id="btn-edit-goal" class="header-icon-btn" title="热量与蛋白质目标">🎯</button>
             <button id="btn-clear-plate" class="header-pill-btn danger">清空</button>
           </div>
         </div>
@@ -617,6 +618,97 @@
             <div id="ai-local-matches-list" class="ios-inset-list"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ==================== Sheet 4：📖 组合菜谱（餐盘一键存菜谱） ==================== -->
+    <div id="recipe-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
+    <div id="recipe-sheet" class="ios-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="recipe-sheet-title">
+      <div class="sheet-grabber-wrap" id="recipe-grabber">
+        <div class="sheet-grabber"></div>
+      </div>
+
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span id="recipe-emoji-preview" class="sheet-emoji">🍳</span>
+          <div>
+            <h2 id="recipe-sheet-title" class="sheet-title">存为我的菜谱</h2>
+            <div class="sheet-subtitle-row">
+              <span class="sheet-base-info">按原料生重 + 油糖酱自动汇总，下次一键加</span>
+            </div>
+          </div>
+        </div>
+        <button id="recipe-close-btn" class="circle-icon-btn close" aria-label="关闭">✕</button>
+      </div>
+
+      <div class="sheet-body form-body">
+        <!-- 实时菜谱热量汇总 -->
+        <div class="recipe-summary-banner">
+          <div class="recipe-sum-left">
+            <div class="recipe-sum-kcal"><span id="recipe-total-kcal">0</span> <small>kcal / 整份</small></div>
+            <div id="recipe-sum-sub" class="recipe-sum-sub">总重 0g · 折合 0 kcal/100g</div>
+          </div>
+          <div class="recipe-sum-macros">
+            <span>碳 <strong id="recipe-total-carbs">0</strong>g</span>
+            <span>蛋 <strong id="recipe-total-protein">0</strong>g</span>
+            <span>脂 <strong id="recipe-total-fat">0</strong>g</span>
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label" for="recipe-name">菜谱名称 <span class="req">*</span></label>
+            <input id="recipe-name" class="ios-input" type="text" placeholder="如：我家番茄炒蛋" maxlength="30" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="recipe-unit-name">成品单位</label>
+            <input id="recipe-unit-name" class="ios-input" type="text" placeholder="1盘 / 1锅 / 1碗" value="1盘" maxlength="12" />
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label" for="recipe-category">分类</label>
+            <select id="recipe-category" class="ios-input"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="recipe-emoji-select">图标</label>
+            <select id="recipe-emoji-select" class="ios-input">
+              <option value="🍳">🍳 炒菜/煎蛋</option>
+              <option value="🥘">🥘 炖菜/煲</option>
+              <option value="🍲">🍲 汤锅/麻辣烫</option>
+              <option value="🥗">🥗 轻食沙拉</option>
+              <option value="🍜">🍜 面食/粉</option>
+              <option value="🍛">🍛 盖饭/炒饭</option>
+              <option value="🍱">🍱 便当/套餐</option>
+              <option value="🥣">🥣 燕麦/碗</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 一键追加油/糖/酱调料 -->
+        <div class="form-group">
+          <label class="form-label">一键补记油 / 糖 / 酱（组合菜热量变量之王）</label>
+          <div class="seasoning-chips" id="recipe-seasoning-chips">
+            <button type="button" class="season-chip" data-season="oil10">＋1勺油 10g (90卡)</button>
+            <button type="button" class="season-chip" data-season="oil5">＋半勺油 5g (45卡)</button>
+            <button type="button" class="season-chip" data-season="sugar5">＋1小勺糖 5g (20卡)</button>
+            <button type="button" class="season-chip" data-season="oyster15">＋1勺蚝油 15g (17卡)</button>
+            <button type="button" class="season-chip" data-season="soy15">＋1勺生抽 15g (9卡)</button>
+          </div>
+        </div>
+
+        <!-- 原料明细列表 -->
+        <div class="form-group">
+          <label class="form-label">菜谱原料清单（可勾选或修改生重克数）</label>
+          <div id="recipe-ingredients-list" class="recipe-ing-list"></div>
+        </div>
+      </div>
+
+      <div class="sheet-footer">
+        <button id="btn-confirm-save-recipe" type="button" class="ios-btn-primary full-width">
+          📖 保存到我的食物库（支持按半盘/1盘折算）
+        </button>
       </div>
     </div>
 

@@ -2,7 +2,7 @@
   'use strict';
 
   // ==================== 持久化 Key ====================
-  const APP_VERSION = 'v1.5.0';
+  const APP_VERSION = 'v1.6.0';
   const STORAGE_KEYS = {
     FAVORITES: 'ios_cal_favorites_v1',
     CUSTOM_FOODS: 'ios_cal_custom_foods_v1',
@@ -114,7 +114,8 @@
     },
     customFormEmoji: '🍱',
     lastAIResult: null,
-    lastImagePayload: null
+    lastImagePayload: null,
+    recipeDraft: []
   };
 
   function getPlateItemsForDate(dateStr) {
@@ -247,6 +248,7 @@
     plateTotalFat: $('#plate-total-fat'),
     plateMealsContainer: $('#plate-meals-container'),
     plateEmpty: $('#plate-empty'),
+    btnSaveRecipe: $('#btn-save-recipe'),
     btnPlateCamera: $('#btn-plate-camera'),
     btnEditGoal: $('#btn-edit-goal'),
     btnClearPlate: $('#btn-clear-plate'),
@@ -365,7 +367,26 @@
     modalBackdrop: $('#modal-backdrop'),
     modalTitle: $('#modal-title'),
     modalContent: $('#modal-content'),
-    modalActions: $('#modal-actions')
+    modalActions: $('#modal-actions'),
+
+    // Recipe Sheet
+    recipeBackdrop: $('#recipe-backdrop'),
+    recipeSheet: $('#recipe-sheet'),
+    recipeGrabber: $('#recipe-grabber'),
+    recipeCloseBtn: $('#recipe-close-btn'),
+    recipeEmojiPreview: $('#recipe-emoji-preview'),
+    recipeTotalKcal: $('#recipe-total-kcal'),
+    recipeSumSub: $('#recipe-sum-sub'),
+    recipeTotalCarbs: $('#recipe-total-carbs'),
+    recipeTotalProtein: $('#recipe-total-protein'),
+    recipeTotalFat: $('#recipe-total-fat'),
+    recipeName: $('#recipe-name'),
+    recipeUnitName: $('#recipe-unit-name'),
+    recipeCategory: $('#recipe-category'),
+    recipeEmojiSelect: $('#recipe-emoji-select'),
+    recipeSeasoningChips: $('#recipe-seasoning-chips'),
+    recipeIngredientsList: $('#recipe-ingredients-list'),
+    btnConfirmSaveRecipe: $('#btn-confirm-save-recipe')
   };
 
   // ==================== Toast 工具 ====================
@@ -461,7 +482,7 @@
           <div class="food-name-line">
             <span class="dot dot-${level.key}" title="${level.badgeText}"></span>
             <span class="food-name">${escapeHTML(food.name)}</span>
-            ${food.isCustom ? '<span class="custom-badge">自定义</span>' : ''}
+            ${food.isRecipe ? '<span class="recipe-badge">📖 菜谱</span>' : (food.isCustom ? '<span class="custom-badge">自定义</span>' : '')}
             ${isFav ? '<span class="fav-heart-mini" title="已收藏">❤️</span>' : ''}
           </div>
           <div class="food-sub">${escapeHTML(subText)}</div>
@@ -758,7 +779,10 @@
         <div class="meal-section">
           <div class="meal-section-header">
             <span>${meal.icon} ${meal.name}</span>
-            <span>${mealKcal} kcal · 蛋 ${mealProtein.toFixed(1)}g</span>
+            <div class="meal-header-right">
+              <span>${mealKcal} kcal · 蛋 ${mealProtein.toFixed(1)}g</span>
+              <button type="button" class="meal-recipe-btn" data-save-meal-recipe="${meal.id}">📖 存菜谱</button>
+            </div>
           </div>
           <div class="ios-inset-list">${rowsHTML}</div>
         </div>
@@ -996,10 +1020,12 @@
 
   // ==================== Sheet 2：添加 / 编辑自定义食物 ====================
   function initCustomFoodFormOptions() {
-    dom.cfCategory.innerHTML = FOOD_CATEGORIES
+    const optionsHTML = FOOD_CATEGORIES
       .filter((c) => c.id !== 'all')
       .map((c) => `<option value="${c.id}">${c.icon} ${c.name}</option>`)
       .join('');
+    dom.cfCategory.innerHTML = optionsHTML;
+    dom.recipeCategory.innerHTML = optionsHTML;
 
     renderEmojiPicker();
   }
@@ -1879,6 +1905,193 @@
     });
   }
 
+  // ==================== Sheet 4：📖 组合菜谱（餐盘一键存为菜谱） ====================
+  const SEASONING_PRESETS = {
+    oil10: { id: 'cooking-oil', name: '烹调植物油', emoji: '🫗', kcal: 899, carbs: 0, protein: 0, fat: 99.9, grams: 10 },
+    oil5: { id: 'cooking-oil', name: '烹调植物油', emoji: '🫗', kcal: 899, carbs: 0, protein: 0, fat: 99.9, grams: 5 },
+    sugar5: { id: 'white-sugar', name: '白砂糖', emoji: '🧂', kcal: 400, carbs: 99.9, protein: 0, fat: 0, grams: 5 },
+    oyster15: { id: 'oyster-sauce', name: '蚝油', emoji: '🫙', kcal: 114, carbs: 24.0, protein: 3.8, fat: 0.3, grams: 15 },
+    soy15: { id: 'soy-sauce', name: '生抽 / 酱油', emoji: '🫙', kcal: 63, carbs: 9.8, protein: 5.6, fat: 0.1, grams: 15 }
+  };
+
+  function openRecipeSheet(mealId = null) {
+    const allItems = getCurrentPlateItems();
+    const sourceItems = mealId ? allItems.filter((it) => it.meal === mealId) : allItems;
+
+    if (sourceItems.length === 0) {
+      showToast('先在餐盘里添加这道菜的原料（生重+油糖），再点存菜谱哦');
+      return;
+    }
+
+    state.recipeDraft = sourceItems.map((it) => {
+      const food = getFoodById(it.foodId) || it.snapshot;
+      return {
+        key: `${it.uid}_${Math.random().toString(36).slice(2, 5)}`,
+        foodId: it.foodId,
+        name: food ? food.name : '未知原料',
+        emoji: food ? (food.emoji || '🍽️') : '🍽️',
+        kcal: food ? food.kcal : 0,
+        carbs: food ? food.carbs : 0,
+        protein: food ? food.protein : 0,
+        fat: food ? food.fat : 0,
+        grams: Math.max(1, Math.round(it.grams)),
+        checked: true
+      };
+    });
+
+    // 自动根据前两样主要原料生成默认菜名提示
+    const mainNames = state.recipeDraft
+      .slice(0, 2)
+      .map((x) => x.name.replace(/[（(][^）)]*[）)]/g, '').slice(0, 5));
+    dom.recipeName.value = mainNames.length >= 2 ? `我家${mainNames.join('+')}` : '';
+    dom.recipeUnitName.value = '1盘';
+    dom.recipeCategory.value = 'dish';
+    dom.recipeEmojiSelect.value = '🍳';
+    dom.recipeEmojiPreview.textContent = '🍳';
+
+    renderRecipeDraft();
+    showSheet(dom.recipeBackdrop, dom.recipeSheet);
+  }
+
+  function closeRecipeSheet() {
+    hideSheet(dom.recipeBackdrop, dom.recipeSheet);
+  }
+
+  function addSeasoningToDraft(presetKey) {
+    const preset = SEASONING_PRESETS[presetKey];
+    if (!preset) return;
+    const existing = state.recipeDraft.find((x) => x.foodId === preset.id && x.checked);
+    if (existing) {
+      existing.grams = Math.round(existing.grams + preset.grams);
+    } else {
+      state.recipeDraft.push({
+        key: `s_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        foodId: preset.id,
+        name: preset.name,
+        emoji: preset.emoji,
+        kcal: preset.kcal,
+        carbs: preset.carbs,
+        protein: preset.protein,
+        fat: preset.fat,
+        grams: preset.grams,
+        checked: true
+      });
+    }
+    renderRecipeDraft();
+    showToast(`已补记 ${preset.name} +${preset.grams}g`);
+  }
+
+  function calcRecipeTotals() {
+    let totalGrams = 0;
+    let totalKcal = 0;
+    let totalCarbs = 0;
+    let totalProtein = 0;
+    let totalFat = 0;
+
+    state.recipeDraft.forEach((ing) => {
+      if (!ing.checked || ing.grams <= 0) return;
+      const nut = calcNutrition(ing, ing.grams);
+      totalGrams += ing.grams;
+      totalKcal += nut.kcal;
+      totalCarbs += nut.carbs;
+      totalProtein += nut.protein;
+      totalFat += nut.fat;
+    });
+
+    const kcalPer100g = totalGrams > 0 ? Math.round((totalKcal / totalGrams) * 100) : 0;
+    const carbsPer100g = totalGrams > 0 ? +((totalCarbs / totalGrams) * 100).toFixed(1) : 0;
+    const proteinPer100g = totalGrams > 0 ? +((totalProtein / totalGrams) * 100).toFixed(1) : 0;
+    const fatPer100g = totalGrams > 0 ? +((totalFat / totalGrams) * 100).toFixed(1) : 0;
+
+    return {
+      totalGrams: Math.round(totalGrams),
+      totalKcal: Math.round(totalKcal),
+      totalCarbs: +totalCarbs.toFixed(1),
+      totalProtein: +totalProtein.toFixed(1),
+      totalFat: +totalFat.toFixed(1),
+      kcalPer100g,
+      carbsPer100g,
+      proteinPer100g,
+      fatPer100g
+    };
+  }
+
+  function updateRecipeSummaryOnly() {
+    const t = calcRecipeTotals();
+    dom.recipeTotalKcal.textContent = t.totalKcal;
+    dom.recipeSumSub.textContent = `总重 ${t.totalGrams}g · 折合 ${t.kcalPer100g} kcal/100g`;
+    dom.recipeTotalCarbs.textContent = t.totalCarbs;
+    dom.recipeTotalProtein.textContent = t.totalProtein;
+    dom.recipeTotalFat.textContent = t.totalFat;
+  }
+
+  function renderRecipeDraft() {
+    updateRecipeSummaryOnly();
+    dom.recipeIngredientsList.innerHTML = state.recipeDraft.map((ing, idx) => {
+      const nut = calcNutrition(ing, ing.grams);
+      return `
+        <div class="recipe-ing-row" data-ing-idx="${idx}">
+          <input type="checkbox" class="recipe-ing-check" data-ing-check="${idx}" ${ing.checked ? 'checked' : ''} />
+          <div class="recipe-ing-info">
+            <div class="recipe-ing-name">${ing.emoji} ${escapeHTML(ing.name)}</div>
+            <div class="recipe-ing-kcal">${nut.kcal} kcal · 蛋 ${nut.protein}g</div>
+          </div>
+          <div class="recipe-ing-grams">
+            <input type="number" inputmode="decimal" min="1" max="5000" value="${ing.grams}" data-ing-grams="${idx}" />
+            <span>g</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function saveRecipeToLibrary() {
+    const name = dom.recipeName.value.trim();
+    if (!name) {
+      showToast('请给这道菜谱起个名字，如「我家番茄炒蛋」');
+      dom.recipeName.focus();
+      return;
+    }
+
+    const activeIngs = state.recipeDraft.filter((x) => x.checked && x.grams > 0);
+    if (activeIngs.length === 0) {
+      showToast('请至少勾选一项原料');
+      return;
+    }
+
+    const t = calcRecipeTotals();
+    const unitName = dom.recipeUnitName.value.trim() || '1盘';
+    const category = dom.recipeCategory.value || 'dish';
+    const emoji = dom.recipeEmojiSelect.value || '🍳';
+
+    const ingSummary = activeIngs
+      .map((x) => `${x.name.replace(/[（(][^）)]*[）)]/g, '')} ${Math.round(x.grams)}g`)
+      .join(' + ');
+
+    const newRecipe = {
+      id: `custom_recipe_${Date.now()}`,
+      name,
+      alias: `菜谱 组合菜 自定义 ${name} ${activeIngs.map((x) => x.name).join(' ')}`,
+      category,
+      emoji,
+      kcal: t.kcalPer100g,
+      carbs: t.carbsPer100g,
+      protein: t.proteinPer100g,
+      fat: t.fatPer100g,
+      unitName,
+      unitGrams: Math.max(1, t.totalGrams),
+      tip: `📖 组合菜谱（整份 ${t.totalGrams}g ≈ ${t.totalKcal} kcal）：${ingSummary}。吃不完可按 0.5 份等比例折算！`,
+      isCustom: true,
+      isRecipe: true
+    };
+
+    state.customFoods.unshift(newRecipe);
+    saveCustomFoods();
+    closeRecipeSheet();
+    renderLookupList(true);
+    showToast(`📖 已保存菜谱「${name}」（整份 ${t.totalKcal} kcal）`);
+  }
+
   function showLegendModal() {
     openModal({
       title: '🚦 热量红绿灯分级标准',
@@ -2273,6 +2486,7 @@
       renderPlate();
     });
 
+    dom.btnSaveRecipe.addEventListener('click', () => openRecipeSheet(null));
     dom.btnEditGoal.addEventListener('click', showGoalModal);
     dom.summaryGoalBtn.addEventListener('click', showGoalModal);
     if (dom.proteinGoalBox) {
@@ -2282,6 +2496,13 @@
 
     dom.plateMealsContainer.addEventListener('click', (e) => {
       if (Date.now() < swipeSuppressClickUntil) return;
+
+      const mealRecipeBtn = e.target.closest('[data-save-meal-recipe]');
+      if (mealRecipeBtn) {
+        e.stopPropagation();
+        openRecipeSheet(mealRecipeBtn.dataset.saveMealRecipe);
+        return;
+      }
 
       const delBtn = e.target.closest('[data-delete-plate]');
       if (delBtn) {
@@ -2508,6 +2729,48 @@
         });
       }, 240);
     });
+
+    // Sheet 4：组合菜谱
+    dom.recipeBackdrop.addEventListener('click', closeRecipeSheet);
+    dom.recipeCloseBtn.addEventListener('click', closeRecipeSheet);
+    dom.recipeGrabber.addEventListener('click', closeRecipeSheet);
+
+    dom.recipeEmojiSelect.addEventListener('change', (e) => {
+      dom.recipeEmojiPreview.textContent = e.target.value;
+    });
+
+    dom.recipeSeasoningChips.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-season]');
+      if (btn) addSeasoningToDraft(btn.dataset.season);
+    });
+
+    dom.recipeIngredientsList.addEventListener('change', (e) => {
+      const chk = e.target.closest('[data-ing-check]');
+      if (chk) {
+        const idx = Number(chk.dataset.ingCheck);
+        if (state.recipeDraft[idx]) {
+          state.recipeDraft[idx].checked = chk.checked;
+          updateRecipeSummaryOnly();
+        }
+      }
+    });
+
+    dom.recipeIngredientsList.addEventListener('input', (e) => {
+      const inp = e.target.closest('[data-ing-grams]');
+      if (inp) {
+        const idx = Number(inp.dataset.ingGrams);
+        if (state.recipeDraft[idx]) {
+          state.recipeDraft[idx].grams = Math.max(0, parseFloat(inp.value) || 0);
+          const row = inp.closest('.recipe-ing-row');
+          const nut = calcNutrition(state.recipeDraft[idx], state.recipeDraft[idx].grams);
+          const kcalEl = row && row.querySelector('.recipe-ing-kcal');
+          if (kcalEl) kcalEl.textContent = `${nut.kcal} kcal · 蛋 ${nut.protein}g`;
+          updateRecipeSummaryOnly();
+        }
+      }
+    });
+
+    dom.btnConfirmSaveRecipe.addEventListener('click', saveRecipeToLibrary);
 
     // Modal
     dom.modalBackdrop.addEventListener('click', (e) => {
