@@ -2,7 +2,7 @@
   'use strict';
 
   // ==================== 持久化 Key ====================
-  const APP_VERSION = 'v1.6.0';
+  const APP_VERSION = 'v1.7.0';
   const STORAGE_KEYS = {
     FAVORITES: 'ios_cal_favorites_v1',
     CUSTOM_FOODS: 'ios_cal_custom_foods_v1',
@@ -215,6 +215,7 @@
     btnEmptyAddCustom: $('#btn-empty-add-custom'),
     btnEmptyCamera: $('#btn-empty-camera'),
     btnResetFilters: $('#btn-reset-filters'),
+    btnBackup: $('#btn-backup'),
     btnLegend: $('#btn-legend'),
     btnTheme: $('#btn-theme'),
 
@@ -264,6 +265,7 @@
     detailSheet: $('#detail-sheet'),
     sheetGrabber: $('#sheet-grabber'),
     sheetCloseBtn: $('#sheet-close-btn'),
+    sheetForkBtn: $('#sheet-fork-btn'),
     sheetEditBtn: $('#sheet-edit-btn'),
     sheetDeleteBtn: $('#sheet-delete-btn'),
     sheetFavBtn: $('#sheet-fav-btn'),
@@ -576,8 +578,8 @@
         const bn = b.name.toLowerCase();
         const aExact = an === rawQ ? 100 : (an.startsWith(rawQ) ? 50 : (an.includes(rawQ) ? 20 : 0));
         const bExact = bn === rawQ ? 100 : (bn.startsWith(rawQ) ? 50 : (bn.includes(rawQ) ? 20 : 0));
-        const aBonus = a.isCustom ? 15 : (a.isStandard ? 0 : 8);
-        const bBonus = b.isCustom ? 15 : (b.isStandard ? 0 : 8);
+        const aBonus = a.isCustom ? 200 : (a.isStandard ? 0 : 8);
+        const bBonus = b.isCustom ? 200 : (b.isStandard ? 0 : 8);
         return (bExact + bBonus) - (aExact + aBonus);
       });
     }
@@ -661,7 +663,8 @@
     let totalFat = 0;
 
     const enriched = currentItems.map((item) => {
-      const food = getFoodById(item.foodId) || item.snapshot;
+      // 优先使用记录当时的营养快照，保证食物改名/改数值/删除后历史记录数值恒定不变
+      const food = item.snapshot || getFoodById(item.foodId);
       if (!food) return null;
       const nut = calcNutrition(food, item.grams);
       totalKcal += nut.kcal;
@@ -857,8 +860,14 @@
 
     state.sheet.food = food;
     state.sheet.editingPlateUid = null;
-    state.sheet.mode = state.listUnitMode === '100g' ? 'gram' : 'unit';
-    state.sheet.amount = state.sheet.mode === 'gram' ? 100 : 1;
+    // 自定义食物默认使用用户设定的常用单位（如 1片=50g / 1瓶=260ml），仍可一键切换按克输入
+    if (food.isCustom) {
+      state.sheet.mode = 'unit';
+      state.sheet.amount = 1;
+    } else {
+      state.sheet.mode = state.listUnitMode === '100g' ? 'gram' : 'unit';
+      state.sheet.amount = state.sheet.mode === 'gram' ? 100 : 1;
+    }
     state.sheet.meal = getSmartDefaultMeal();
 
     const isToday = state.plateDate === getTodayStr();
@@ -875,18 +884,33 @@
     if (!item) return;
 
     const dbFood = getFoodById(item.foodId);
-    const food = dbFood || {
-      id: item.foodId,
-      name: item.snapshot?.name || '记录食物',
-      emoji: item.snapshot?.emoji || '🍽️',
-      kcal: item.snapshot?.kcal || 0,
-      carbs: item.snapshot?.carbs || 0,
-      protein: item.snapshot?.protein || 0,
-      fat: item.snapshot?.fat || 0,
-      unitName: '1份',
-      unitGrams: Math.max(10, Math.round(item.grams || 100)),
-      tip: '修改克数、份数或餐次后点击保存，即可原地更新本条记录。'
-    };
+    // 优先保持记录当时的营养快照数值，unitName/unitGrams 优先参考原条目或快照
+    const food = item.snapshot
+      ? {
+          id: item.foodId,
+          name: item.snapshot.name,
+          emoji: item.snapshot.emoji || '🍽️',
+          kcal: item.snapshot.kcal,
+          carbs: item.snapshot.carbs,
+          protein: item.snapshot.protein,
+          fat: item.snapshot.fat,
+          unitName: item.snapshot.unitName || dbFood?.unitName || '1份',
+          unitGrams: item.snapshot.unitGrams || dbFood?.unitGrams || Math.max(10, Math.round(item.grams || 100)),
+          isCustom: Boolean(dbFood?.isCustom),
+          tip: '修改克数、份数或餐次后点击保存，即可原地更新本条记录（沿用记录当时的营养数值）。'
+        }
+      : (dbFood || {
+          id: item.foodId,
+          name: '记录食物',
+          emoji: '🍽️',
+          kcal: 0,
+          carbs: 0,
+          protein: 0,
+          fat: 0,
+          unitName: '1份',
+          unitGrams: Math.max(10, Math.round(item.grams || 100)),
+          tip: '修改克数、份数或餐次后点击保存，即可原地更新本条记录。'
+        });
 
     state.sheet.food = food;
     state.sheet.editingPlateUid = uid;
@@ -895,7 +919,7 @@
     // 若克数刚好是常见份量的 0.5 倍数，优先按份数显示；否则按克数显示
     const units = food.unitGrams > 0 ? item.grams / food.unitGrams : 0;
     const roundedHalf = Math.round(units * 2) / 2;
-    if (dbFood && roundedHalf >= 0.5 && Math.abs(units - roundedHalf) < 0.05) {
+    if (roundedHalf >= 0.5 && Math.abs(units - roundedHalf) < 0.05) {
       state.sheet.mode = 'unit';
       state.sheet.amount = roundedHalf;
     } else {
@@ -917,6 +941,7 @@
     dom.sheetLevelBadge.textContent = level.badgeText;
     dom.sheetLevelBadge.className = `level-badge ${level.key}`;
     dom.sheetCustomBadge.classList.toggle('hidden', !food.isCustom);
+    dom.sheetForkBtn.classList.toggle('hidden', Boolean(food.isCustom) || !existsInDb);
     dom.sheetEditBtn.classList.toggle('hidden', !food.isCustom);
     dom.sheetDeleteBtn.classList.toggle('hidden', !food.isCustom);
     dom.sheetFavBtn.classList.toggle('hidden', !existsInDb);
@@ -1083,20 +1108,23 @@
     const protein = Math.max(0, parseFloat(dom.cfProtein.value) || 0);
     const fat = Math.max(0, parseFloat(dom.cfFat.value) || 0);
     const unitName = dom.cfUnitName.value.trim() || '1份';
-    const unitGrams = Math.max(1, Math.round(parseFloat(dom.cfUnitGrams.value) || 100));
+    const unitGrams = Math.max(1, +(parseFloat(dom.cfUnitGrams.value) || 100).toFixed(1));
     const tip = dom.cfTip.value.trim() || '自定义录入食物，可根据实际份量灵活换算。';
     const category = dom.cfCategory.value || 'dish';
+    const kcalVal = +kcal.toFixed(1);
 
     const editId = dom.cfId.value;
     if (editId) {
       const idx = state.customFoods.findIndex((x) => x.id === editId);
       if (idx >= 0) {
+        const prev = state.customFoods[idx];
         state.customFoods[idx] = {
-          ...state.customFoods[idx],
+          ...prev,
           name,
+          alias: `${prev.isRecipe ? '菜谱 组合菜 ' : ''}自定义 ${name}`,
           category,
           emoji: state.customFormEmoji,
-          kcal: Math.round(kcal),
+          kcal: kcalVal,
           carbs: +carbs.toFixed(1),
           protein: +protein.toFixed(1),
           fat: +fat.toFixed(1),
@@ -1118,7 +1146,7 @@
         alias: `自定义 ${name}`,
         category,
         emoji: state.customFormEmoji,
-        kcal: Math.round(kcal),
+        kcal: kcalVal,
         carbs: +carbs.toFixed(1),
         protein: +protein.toFixed(1),
         fat: +fat.toFixed(1),
@@ -1675,7 +1703,9 @@
         kcal: food.kcal,
         carbs: food.carbs,
         protein: food.protein,
-        fat: food.fat
+        fat: food.fat,
+        unitName: food.unitName || '1份',
+        unitGrams: food.unitGrams || 100
       },
       addedAt: Date.now()
     });
@@ -1706,9 +1736,10 @@
   function quickAddFood(foodId) {
     const food = getFoodById(foodId);
     if (!food) return;
-    const isUnit = state.listUnitMode === 'unit';
-    const grams = isUnit ? food.unitGrams : 100;
-    const label = isUnit ? food.unitName : '100g';
+    // 自定义食物默认优先按用户设定的常用单位（如 1片=50g / 1瓶=260ml）一键加入餐盘
+    const useUnit = food.isCustom || state.listUnitMode === 'unit';
+    const grams = useUnit ? food.unitGrams : 100;
+    const label = useUnit ? food.unitName : '100g';
     addToPlate(foodId, grams, label, getSmartDefaultMeal());
   }
 
@@ -2081,6 +2112,11 @@
       unitName,
       unitGrams: Math.max(1, t.totalGrams),
       tip: `📖 组合菜谱（整份 ${t.totalGrams}g ≈ ${t.totalKcal} kcal）：${ingSummary}。吃不完可按 0.5 份等比例折算！`,
+      recipeIngredients: activeIngs.map((x) => ({
+        foodId: x.foodId,
+        name: x.name,
+        grams: Math.round(x.grams)
+      })),
       isCustom: true,
       isRecipe: true
     };
@@ -2090,6 +2126,158 @@
     closeRecipeSheet();
     renderLookupList(true);
     showToast(`📖 已保存菜谱「${name}」（整份 ${t.totalKcal} kcal）`);
+  }
+
+  // ==================== JSON 导出 / 导入备份（含自定义食物与历史记录） ====================
+  function buildBackupPayload() {
+    return {
+      app: 'QingKaLookup',
+      schemaVersion: 2,
+      exportedAt: new Date().toISOString(),
+      data: {
+        customFoods: state.customFoods,
+        favorites: state.favorites,
+        plateHistory: state.plateHistory,
+        hiddenFoodIds: state.hiddenFoodIds,
+        categoryOverrides: state.categoryOverrides,
+        dailyGoal: state.dailyGoal,
+        proteinGoal: state.proteinGoal
+      }
+    };
+  }
+
+  function applyBackupPayload(raw) {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const payload = parsed && parsed.data ? parsed.data : parsed;
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('JSON 结构无效');
+    }
+
+    if (Array.isArray(payload.customFoods)) {
+      state.customFoods = payload.customFoods.map((item) => ({
+        ...item,
+        id: item.id || `custom_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        isCustom: true
+      }));
+      saveCustomFoods();
+    }
+    if (Array.isArray(payload.favorites)) {
+      state.favorites = payload.favorites;
+      saveFavorites();
+    }
+    if (payload.plateHistory && typeof payload.plateHistory === 'object' && !Array.isArray(payload.plateHistory)) {
+      state.plateHistory = payload.plateHistory;
+      savePlate();
+    }
+    if (Array.isArray(payload.hiddenFoodIds)) {
+      state.hiddenFoodIds = payload.hiddenFoodIds;
+      saveHiddenFoods();
+    }
+    if (payload.categoryOverrides && typeof payload.categoryOverrides === 'object') {
+      state.categoryOverrides = payload.categoryOverrides;
+      saveCategoryOverrides();
+    }
+    if (Number(payload.dailyGoal) >= 500) {
+      state.dailyGoal = Math.round(Number(payload.dailyGoal));
+    }
+    if (Number(payload.proteinGoal) >= 20) {
+      state.proteinGoal = Math.round(Number(payload.proteinGoal));
+    }
+    saveGoal();
+
+    renderLookupList(true);
+    renderFavoritesList();
+    renderPlate();
+    return {
+      customCount: state.customFoods.length,
+      daysCount: Object.keys(state.plateHistory).length
+    };
+  }
+
+  function showBackupModal() {
+    const jsonStr = JSON.stringify(buildBackupPayload(), null, 2);
+    openModal({
+      title: '💾 数据导出 / 导入 (JSON)',
+      html: `
+        <p style="margin:0 0 8px;font-size:12px;">包含全部 <strong>${state.customFoods.length}</strong> 条自定义食物/菜谱、收藏、餐盘历史与目标设置。</p>
+        <div class="backup-actions-row">
+          <button type="button" id="btn-export-download" class="ios-btn-secondary" style="padding:8px;font-size:12px;">📤 下载 JSON</button>
+          <button type="button" id="btn-export-copy" class="ios-btn-secondary" style="padding:8px;font-size:12px;">📋 复制 JSON</button>
+        </div>
+        <div class="goal-section-label">导入恢复（选择 .json 文件或粘贴内容）</div>
+        <input id="backup-file-input" type="file" accept=".json,application/json" class="hidden" />
+        <button type="button" id="btn-import-file" class="ios-btn-secondary" style="width:100%;padding:8px;font-size:12px;margin-bottom:8px;">📂 选择本地 JSON 文件导入</button>
+        <textarea id="backup-json-textarea" class="backup-textarea" placeholder="或直接在此粘贴之前导出的 JSON 备份内容...">${escapeHTML(jsonStr)}</textarea>
+      `,
+      actions: [
+        { text: '关闭', cls: 'cancel' },
+        {
+          text: '导入恢复',
+          onClick: () => {
+            const txt = ($('#backup-json-textarea')?.value || '').trim();
+            if (!txt) {
+              showToast('请先粘贴或选择 JSON 备份');
+              return false;
+            }
+            try {
+              const res = applyBackupPayload(txt);
+              showToast(`✓ 已恢复 ${res.customCount} 条自定义食物 · ${res.daysCount} 天餐盘`);
+            } catch (err) {
+              showToast(`导入失败：${err.message || 'JSON 格式错误'}`);
+              return false;
+            }
+          }
+        }
+      ]
+    });
+
+    $('#btn-export-download')?.addEventListener('click', () => {
+      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `qingka-backup-${getTodayStr()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('📤 已导出 JSON 备份文件');
+    });
+
+    $('#btn-export-copy')?.addEventListener('click', async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(jsonStr);
+        } else {
+          const ta = $('#backup-json-textarea');
+          ta.select();
+          document.execCommand('copy');
+        }
+        showToast('📋 已复制全部 JSON 备份到剪贴板');
+      } catch {
+        showToast('请长按下方文本框手动全选复制');
+      }
+    });
+
+    $('#btn-import-file')?.addEventListener('click', () => {
+      $('#backup-file-input')?.click();
+    });
+
+    $('#backup-file-input')?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const res = applyBackupPayload(ev.target.result);
+          closeModal();
+          showToast(`✓ 导入成功：${res.customCount} 条自定义食物 · ${res.daysCount} 天餐盘`);
+        } catch (err) {
+          showToast(`导入失败：${err.message || 'JSON 格式错误'}`);
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    });
   }
 
   function showLegendModal() {
@@ -2210,7 +2398,7 @@
       let kcal = 0;
       let prot = 0;
       items.forEach((it) => {
-        const food = getFoodById(it.foodId) || it.snapshot;
+        const food = it.snapshot || getFoodById(it.foodId);
         if (!food) return;
         const nut = calcNutrition(food, it.grams);
         kcal += nut.kcal;
@@ -2286,6 +2474,7 @@
       applyTheme(current === 'dark' ? 'light' : 'dark');
     });
 
+    dom.btnBackup.addEventListener('click', showBackupModal);
     dom.btnLegend.addEventListener('click', showLegendModal);
 
     // 搜索框
@@ -2529,6 +2718,27 @@
 
     dom.sheetFavBtn.addEventListener('click', () => {
       if (state.sheet.food) toggleFavorite(state.sheet.food.id);
+    });
+
+    dom.sheetForkBtn.addEventListener('click', () => {
+      if (!state.sheet.food) return;
+      const src = state.sheet.food;
+      closeFoodSheet();
+      setTimeout(() => {
+        const baseName = src.name.replace(/[（(][^）)]*[）)]/g, '').trim() || src.name;
+        openCustomFoodSheet({
+          name: `${baseName}（我的）`,
+          emoji: src.emoji || '🍱',
+          category: src.category || 'dish',
+          kcal: src.kcal,
+          carbs: src.carbs,
+          protein: src.protein,
+          fat: src.fat,
+          unitName: src.unitName || '1份',
+          unitGrams: src.unitGrams || 100,
+          tip: `基于「${src.name}」自建，按实际包装标签与份量调整。`
+        });
+      }, 220);
     });
 
     dom.sheetEditBtn.addEventListener('click', () => {

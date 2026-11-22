@@ -2273,3 +2273,47 @@ button {
   font-size: 12px;
   color: var(--secondary-label);
 }
+
+/* ==================== v1.7.0 新增样式：另存为我的版本 & JSON 备份 ==================== */
+.fork-pill-btn {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--ios-blue);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fork-pill-btn:active {
+  opacity: 0.78;
+}
+
+.backup-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.backup-textarea {
+  width: 100%;
+  height: 110px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--separator);
+  background: var(--bg-grouped);
+  color: var(--label);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  resize: none;
+  outline: none;
+}
+
+.backup-textarea:focus {
+  border-color: var(--ios-blue);
+}
