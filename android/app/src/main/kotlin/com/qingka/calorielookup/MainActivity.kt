@@ -122,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val nativeFlagsJs = "window.__ANDROID_NATIVE_APP__ = true; window.__ANDROID_NATIVE_OCR__ = true;"
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_JAVASCRIPT)) {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(
                 webView,
                 nativeFlagsJs,
