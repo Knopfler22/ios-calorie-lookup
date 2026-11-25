@@ -2,7 +2,19 @@
   'use strict';
 
   // ==================== 持久化 Key ====================
-  const APP_VERSION = 'v1.7.0';
+  const APP_VERSION = 'v1.7.1';
+  const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
+  const GEMINI_FALLBACK_MODELS = [
+    'gemini-4-hydrogen',
+    'gemini-3.5-flash-lite',
+    'gemini-3.6-flash'
+  ];
+  const DEPRECATED_GEMINI_MODELS = new Set([
+    'gemini-3.8-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro'
+  ]);
   const STORAGE_KEYS = {
     FAVORITES: 'ios_cal_favorites_v1',
     CUSTOM_FOODS: 'ios_cal_custom_foods_v1',
@@ -100,7 +112,7 @@
     proteinGoal: Number(localStorage.getItem(STORAGE_KEYS.PROTEIN_GOAL)) || 100,
     aiConfig: loadJSON(STORAGE_KEYS.AI_CONFIG, {
       provider: 'gemini',
-      geminiModel: 'gemini-3.8-flash',
+      geminiModel: DEFAULT_GEMINI_MODEL,
       apiKey: '',
       baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       model: 'qwen-vl-plus'
@@ -1207,7 +1219,7 @@
   // ==================== Sheet 3：📷 拍照识别食物 ====================
   function syncAIConfigUI() {
     const cfg = state.aiConfig;
-    const geminiModel = cfg.geminiModel || 'gemini-3.8-flash';
+    const geminiModel = cfg.geminiModel || DEFAULT_GEMINI_MODEL;
     dom.aiProvider.value = cfg.provider || 'gemini';
     dom.aiGeminiModel.value = geminiModel;
     dom.aiBaseUrl.value = cfg.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
@@ -1284,6 +1296,26 @@
   "tip": "一句简短实用的减脂控卡点评（35字以内）"
 }
 注意：所有数值必须为数字类型，且符合中国常见食物营养成分常识。如果图片不是食物，请返回 {"error": "未在图片中识别到明显食物，请重新拍摄食物正面清晰照片"}。`;
+
+  const AI_FOOD_RESPONSE_SCHEMA = {
+    type: 'object',
+    properties: {
+      name: { type: 'string' },
+      emoji: { type: 'string' },
+      category: {
+        type: 'string',
+        enum: ['staple', 'protein', 'veggie', 'fruit', 'dairy', 'dish', 'fastfood', 'snack']
+      },
+      kcalPer100g: { type: 'number' },
+      carbsPer100g: { type: 'number' },
+      proteinPer100g: { type: 'number' },
+      fatPer100g: { type: 'number' },
+      portionName: { type: 'string' },
+      portionGrams: { type: 'number' },
+      tip: { type: 'string' },
+      error: { type: 'string' }
+    }
+  };
 
   function parseAIJsonText(text) {
     const cleaned = String(text || '')
@@ -1458,8 +1490,9 @@
           ]
         }],
         generationConfig: {
-          temperature: 0.2,
-          responseMimeType: 'application/json'
+          thinkingConfig: { thinkingLevel: 'low' },
+          responseMimeType: 'application/json',
+          responseJsonSchema: AI_FOOD_RESPONSE_SCHEMA
         }
       })
     });
@@ -1471,7 +1504,11 @@
       err.status = res.status;
       throw err;
     }
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const text = parts
+      .filter((p) => p && !p.thought && typeof p.text === 'string')
+      .map((p) => p.text)
+      .join('');
     const parsed = parseAIJsonText(text);
     parsed._isOffline = false;
     parsed._sourceLabel = `🤖 ${cleanModel} 估算`;
@@ -1485,13 +1522,11 @@
     }
 
     if (provider === 'gemini') {
-      // 主模型 + 自动容灾备用链（高吞吐 Lite 模型抗堵车）
-      const primary = (geminiModel || 'gemini-3.8-flash').trim();
+      // 主模型 + 自动容灾备用链
+      const primary = (geminiModel || DEFAULT_GEMINI_MODEL).trim();
       const candidates = [...new Set([
         primary,
-        'gemini-3.8-flash',
-        'gemini-3.5-flash-lite',
-        'gemini-3.1-flash-lite'
+        ...GEMINI_FALLBACK_MODELS
       ].filter(Boolean))];
 
       let lastErr = null;
@@ -1505,9 +1540,10 @@
         } catch (err) {
           lastErr = err;
           const msg = (err.message || '').toLowerCase();
-          const retryable = err.status === 503 || err.status === 429 || err.status === 404
+          const retryable = err.status === 503 || err.status === 429 || err.status === 404 || err.status === 410
             || msg.includes('high demand') || msg.includes('overloaded')
             || msg.includes('no longer available') || msg.includes('not found')
+            || msg.includes('deprecated') || msg.includes('retired') || msg.includes('shut down')
             || msg.includes('quota') || msg.includes('resource exhausted');
           if (!retryable) throw err;
         }
@@ -2865,7 +2901,7 @@
     dom.btnSaveAIConfig.addEventListener('click', () => {
       state.aiConfig = {
         provider: dom.aiProvider.value,
-        geminiModel: dom.aiGeminiModel.value.trim() || 'gemini-3.8-flash',
+        geminiModel: dom.aiGeminiModel.value.trim() || DEFAULT_GEMINI_MODEL,
         apiKey: dom.aiApiKey.value.trim(),
         baseUrl: dom.aiBaseUrl.value.trim() || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         model: dom.aiModel.value.trim() || 'qwen-vl-plus'
@@ -3140,10 +3176,24 @@
     });
   }
 
+  function migrateLegacyAIConfig() {
+    if (!state.aiConfig || typeof state.aiConfig !== 'object') return;
+    const savedModel = String(state.aiConfig.geminiModel || '').trim();
+    if (savedModel && DEPRECATED_GEMINI_MODELS.has(savedModel)) {
+      state.aiConfig = {
+        ...state.aiConfig,
+        geminiModel: DEFAULT_GEMINI_MODEL
+      };
+      saveAIConfig();
+      showToast(`已自动将旧版 Gemini 模型升级为 ${DEFAULT_GEMINI_MODEL}`);
+    }
+  }
+
   // ==================== 启动初始化 ====================
   function init() {
     initTheme();
     initPWA();
+    migrateLegacyAIConfig();
     initCustomFoodFormOptions();
     renderCategories();
     syncUnitToggleUI();

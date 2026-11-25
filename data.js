@@ -313,6 +313,7 @@ if (typeof CHINA_FOOD_COMP_RAW !== 'undefined' && Array.isArray(CHINA_FOOD_COMP_
     const row = CHINA_FOOD_COMP_RAW[i];
     const [code, name, category, emoji, kcal, carbs, protein, fat, sublabel, tip, pinyin] = row;
     if (!name || existingNames.has(name.trim())) continue;
+    if (![kcal, carbs, protein, fat].every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)) continue;
     existingNames.add(name.trim());
     FOOD_DATABASE.push({
       id: `cfcd_${code}`,

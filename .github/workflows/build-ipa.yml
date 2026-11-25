@@ -45,20 +45,25 @@ jobs:
             build
 
       - name: Package unsigned .ipa for sideloading
+        id: package
         working-directory: ios
         run: |
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" build/Build/Products/Release-iphoneos/QingKaLookup.app/Info.plist
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/Build/Products/Release-iphoneos/QingKaLookup.app/Info.plist
-          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" build/Build/Products/Release-iphoneos/QingKaLookup.app/Info.plist
+          PLIST="build/Build/Products/Release-iphoneos/QingKaLookup.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PLIST"
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")
+          echo "Version: $VERSION ($BUILD)"
+          IPA_NAME="QingKaLookup-${VERSION}-${BUILD}.ipa"
+          echo "ipa_name=${IPA_NAME}" >> "$GITHUB_OUTPUT"
           mkdir -p dist/Payload
           cp -R build/Build/Products/Release-iphoneos/QingKaLookup.app dist/Payload/
           cd dist
-          zip -qry ../QingKaLookup.ipa Payload
-          ls -lh ../QingKaLookup.ipa
+          zip -qry "../${IPA_NAME}" Payload
+          ls -lh "../${IPA_NAME}"
 
-      - name: Upload QingKaLookup.ipa artifact
+      - name: Upload versioned .ipa artifact
         uses: actions/upload-artifact@v4
         with:
           name: QingKaLookup-iOS-IPA
-          path: ios/QingKaLookup.ipa
+          path: ios/${{ steps.package.outputs.ipa_name }}
           retention-days: 30

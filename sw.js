@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ios-calorie-lookup-v7';
+const CACHE_NAME = 'ios-calorie-lookup-v8';
 const ASSETS = [
   './',
   './index.html',
