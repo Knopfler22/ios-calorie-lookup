@@ -33,6 +33,7 @@
         <div class="header-top-row">
           <h1 class="large-title">热量速查</h1>
           <div class="header-actions">
+            <button id="btn-text-import" class="header-pill-btn primary-tint" title="文本离线导入菜谱">📝 导入</button>
             <button id="btn-add-custom" class="header-pill-btn primary-tint" title="添加自定义食物">＋ 添加</button>
             <button id="btn-backup" class="header-icon-btn" title="JSON 导出/导入备份" aria-label="数据备份">💾</button>
             <button id="btn-legend" class="header-icon-btn" title="红绿灯说明" aria-label="红绿灯说明">🚦</button>
@@ -708,9 +709,126 @@
       </div>
 
       <div class="sheet-footer">
+        <button id="btn-recipe-to-text-import" type="button" class="link-btn-sm" style="margin-bottom:8px;width:100%;text-align:center;">
+          📝 从菜谱文本粘贴离线导入 →
+        </button>
         <button id="btn-confirm-save-recipe" type="button" class="ios-btn-primary full-width">
           📖 保存到我的食物库（支持按半盘/1盘折算）
         </button>
+      </div>
+    </div>
+
+    <!-- ==================== Sheet 5：📝 文本离线导入菜谱 ==================== -->
+    <div id="text-import-backdrop" class="sheet-backdrop hidden" aria-hidden="true"></div>
+    <div id="text-import-sheet" class="ios-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="text-import-title">
+      <div class="sheet-grabber-wrap" id="text-import-grabber">
+        <div class="sheet-grabber"></div>
+      </div>
+
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="sheet-emoji">📝</span>
+          <div>
+            <h2 id="text-import-title" class="sheet-title">文本离线导入</h2>
+            <div class="sheet-subtitle-row">
+              <span class="sheet-base-info">100% 本地离线解析 · 匹配 1,884+ 食物库</span>
+            </div>
+          </div>
+        </div>
+        <button id="text-import-close-btn" class="circle-icon-btn close" aria-label="关闭">✕</button>
+      </div>
+
+      <!-- Step 1：输入文本 -->
+      <div id="ti-step-input" class="sheet-body form-body">
+        <div class="form-group">
+          <label class="form-label" for="ti-input-text">粘贴菜谱、原料清单或菜名列表</label>
+          <textarea
+            id="ti-input-text"
+            class="ti-textarea"
+            placeholder="示例：&#10;黑椒鸡胸炒西兰花&#10;原料：鸡胸肉 200g、西兰花 150克、橄榄油 1勺、生抽 1勺&#10;&#10;也支持纯菜名清单：&#10;番茄炒蛋、宫保鸡丁、白米饭"
+          ></textarea>
+        </div>
+
+        <div class="ti-input-tools">
+          <button id="ti-btn-paste" type="button" class="season-chip">📋 粘贴剪贴板</button>
+          <button id="ti-btn-sample" type="button" class="season-chip">✨ 填入示例</button>
+          <button id="ti-btn-clear" type="button" class="season-chip">清空</button>
+        </div>
+
+        <div class="tip-box" style="margin-top:12px;">
+          <span class="tip-icon">🔒</span>
+          <p>全程在本地离线完成，不请求任何云端模型；未匹配原料与模糊用量将明确标出，绝不静默丢弃或瞎猜。</p>
+        </div>
+      </div>
+
+      <div id="ti-input-footer" class="sheet-footer">
+        <button id="ti-btn-parse" type="button" class="ios-btn-primary full-width">⚡ 本地离线解析</button>
+      </div>
+
+      <!-- Step 2：结构化预览与审校 -->
+      <div id="ti-step-review" class="sheet-body form-body hidden">
+        <div class="ti-review-topbar">
+          <span id="ti-mode-badge" class="ai-source-pill">📖 配方菜谱模式</span>
+          <button id="ti-btn-back-input" type="button" class="link-btn-sm">← 修改文本</button>
+        </div>
+
+        <div class="recipe-summary-banner">
+          <div class="recipe-sum-left">
+            <div class="recipe-sum-kcal"><span id="ti-total-kcal">0</span> <small>kcal / 整份</small></div>
+            <div id="ti-sum-sub" class="recipe-sum-sub">总重 0g · 折合 0 kcal/100g</div>
+          </div>
+          <div class="recipe-sum-macros">
+            <span>碳 <strong id="ti-total-carbs">0</strong>g</span>
+            <span>蛋 <strong id="ti-total-protein">0</strong>g</span>
+            <span>脂 <strong id="ti-total-fat">0</strong>g</span>
+          </div>
+        </div>
+
+        <div id="ti-recipe-meta" class="ti-recipe-meta">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="ti-recipe-name">菜谱名称 <span class="req">*</span></label>
+              <input id="ti-recipe-name" class="ios-input" type="text" placeholder="如：黑椒鸡胸炒西兰花" maxlength="30" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ti-unit-name">成品单位</label>
+              <input id="ti-unit-name" class="ios-input" type="text" placeholder="1盘 / 1份" value="1盘" maxlength="12" />
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="ti-category">分类</label>
+              <select id="ti-category" class="ios-input"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ti-emoji">图标</label>
+              <select id="ti-emoji" class="ios-input">
+                <option value="🍳">🍳 炒菜/煎蛋</option>
+                <option value="🥗">🥗 轻食沙拉</option>
+                <option value="🥘">🥘 炖菜/煲</option>
+                <option value="🍲">🍲 汤锅</option>
+                <option value="🍜">🍜 面食/粉</option>
+                <option value="🍛">🍛 盖饭/炒饭</option>
+                <option value="🍱">🍱 便当/套餐</option>
+                <option value="🥣">🥣 燕麦/碗</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="ti-sections-container"></div>
+      </div>
+
+      <div id="ti-review-footer" class="sheet-footer hidden">
+        <div id="ti-blocker-hint" class="ti-blocker-hint hidden"></div>
+        <div id="ti-recipe-actions" class="ai-res-btns">
+          <button id="ti-btn-save-recipe" type="button" class="ios-btn-primary">📖 存为菜谱</button>
+          <button id="ti-btn-save-and-plate" type="button" class="ios-btn-secondary">🍽️ 保存并加餐盘</button>
+        </div>
+        <div id="ti-dishlist-actions" class="ai-res-btns hidden">
+          <button id="ti-btn-batch-plate" type="button" class="ios-btn-primary">🍽️ 批量加入今日餐盘</button>
+          <button id="ti-btn-merge-recipe" type="button" class="ios-btn-secondary">📖 合并存为自定义菜谱</button>
+        </div>
       </div>
     </div>
 
@@ -726,6 +844,7 @@
 
   <script src="./china_food_db.js"></script>
   <script src="./data.js"></script>
+  <script src="./recipe_parser.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

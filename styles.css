@@ -2317,3 +2317,157 @@ button {
 .backup-textarea:focus {
   border-color: var(--ios-blue);
 }
+
+/* ==================== v1.8.0 新增样式：文本离线导入（Sheet 5） ==================== */
+.ti-textarea {
+  width: 100%;
+  height: 150px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--separator);
+  background: var(--bg-card);
+  color: var(--label);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+
+.ti-textarea:focus {
+  border-color: var(--ios-blue);
+}
+
+.ti-input-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ti-review-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ti-sec-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 12px 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ti-sec-title.green { color: #248a3d; }
+.ti-sec-title.yellow { color: #b25000; }
+.ti-sec-title.red { color: #d70015; }
+
+.ti-item-card {
+  background: var(--bg-card);
+  border: 0.5px solid var(--separator);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.ti-item-card.yellow {
+  border-color: rgba(255, 149, 0, 0.55);
+  background: rgba(255, 149, 0, 0.06);
+}
+
+.ti-item-card.red {
+  border-color: rgba(255, 59, 48, 0.5);
+  background: rgba(255, 59, 48, 0.05);
+}
+
+.ti-item-card.ignored {
+  opacity: 0.68;
+  border-color: var(--separator);
+  background: var(--bg-grouped);
+}
+
+.ti-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ti-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ti-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--label);
+}
+
+.ti-item-sub {
+  font-size: 11px;
+  color: var(--secondary-label);
+  margin-top: 2px;
+}
+
+.ti-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ti-mini-btn {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-grouped);
+  border: 1px solid var(--separator);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ios-blue);
+}
+
+.ti-mini-btn.warn {
+  color: #b25000;
+  border-color: rgba(255, 149, 0, 0.5);
+}
+
+.ti-mini-btn.danger {
+  color: #d70015;
+}
+
+.ti-blocker-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d70015;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.ti-pick-list {
+  max-height: 240px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border: 0.5px solid var(--separator);
+  border-radius: 10px;
+}
+
+.ti-pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 0.5px solid var(--separator);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ti-pick-row:last-child {
+  border-bottom: none;
+}
+
+.ti-pick-row:active {
+  background: var(--blue-soft);
+}

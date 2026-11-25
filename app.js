@@ -2,7 +2,7 @@
   'use strict';
 
   // ==================== 持久化 Key ====================
-  const APP_VERSION = 'v1.7.1';
+  const APP_VERSION = 'v1.8.0';
   const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
   const GEMINI_FALLBACK_MODELS = [
     'gemini-4-hydrogen',
@@ -127,7 +127,9 @@
     customFormEmoji: '🍱',
     lastAIResult: null,
     lastImagePayload: null,
-    recipeDraft: []
+    recipeDraft: [],
+    textImport: { mode: 'recipe', recipeName: '', items: [] },
+    customFoodCallback: null
   };
 
   function getPlateItemsForDate(dateStr) {
@@ -400,7 +402,44 @@
     recipeEmojiSelect: $('#recipe-emoji-select'),
     recipeSeasoningChips: $('#recipe-seasoning-chips'),
     recipeIngredientsList: $('#recipe-ingredients-list'),
-    btnConfirmSaveRecipe: $('#btn-confirm-save-recipe')
+    btnConfirmSaveRecipe: $('#btn-confirm-save-recipe'),
+    btnRecipeToTextImport: $('#btn-recipe-to-text-import'),
+
+    // Sheet 5: Text Import
+    btnTextImport: $('#btn-text-import'),
+    textImportBackdrop: $('#text-import-backdrop'),
+    textImportSheet: $('#text-import-sheet'),
+    textImportGrabber: $('#text-import-grabber'),
+    textImportCloseBtn: $('#text-import-close-btn'),
+    tiStepInput: $('#ti-step-input'),
+    tiInputFooter: $('#ti-input-footer'),
+    tiInputText: $('#ti-input-text'),
+    tiBtnPaste: $('#ti-btn-paste'),
+    tiBtnSample: $('#ti-btn-sample'),
+    tiBtnClear: $('#ti-btn-clear'),
+    tiBtnParse: $('#ti-btn-parse'),
+    tiStepReview: $('#ti-step-review'),
+    tiReviewFooter: $('#ti-review-footer'),
+    tiModeBadge: $('#ti-mode-badge'),
+    tiBtnBackInput: $('#ti-btn-back-input'),
+    tiTotalKcal: $('#ti-total-kcal'),
+    tiSumSub: $('#ti-sum-sub'),
+    tiTotalCarbs: $('#ti-total-carbs'),
+    tiTotalProtein: $('#ti-total-protein'),
+    tiTotalFat: $('#ti-total-fat'),
+    tiRecipeMeta: $('#ti-recipe-meta'),
+    tiRecipeName: $('#ti-recipe-name'),
+    tiUnitName: $('#ti-unit-name'),
+    tiCategory: $('#ti-category'),
+    tiEmoji: $('#ti-emoji'),
+    tiSectionsContainer: $('#ti-sections-container'),
+    tiBlockerHint: $('#ti-blocker-hint'),
+    tiRecipeActions: $('#ti-recipe-actions'),
+    tiBtnSaveRecipe: $('#ti-btn-save-recipe'),
+    tiBtnSaveAndPlate: $('#ti-btn-save-and-plate'),
+    tiDishlistActions: $('#ti-dishlist-actions'),
+    tiBtnBatchPlate: $('#ti-btn-batch-plate'),
+    tiBtnMergeRecipe: $('#ti-btn-merge-recipe')
   };
 
   // ==================== Toast 工具 ====================
@@ -1063,6 +1102,7 @@
       .join('');
     dom.cfCategory.innerHTML = optionsHTML;
     dom.recipeCategory.innerHTML = optionsHTML;
+    dom.tiCategory.innerHTML = optionsHTML;
 
     renderEmojiPicker();
   }
@@ -1103,6 +1143,24 @@
     hideSheet(dom.customBackdrop, dom.customSheet);
   }
 
+  function findDuplicateFoodByName(name, excludeId = null) {
+    const target = String(name || '').trim();
+    if (!target) return null;
+    const all = [...state.customFoods, ...FOOD_DATABASE];
+    return all.find((x) => x.id !== excludeId && String(x.name || '').trim() === target) || null;
+  }
+
+  function suggestUniqueRecipeName(baseName) {
+    const clean = String(baseName || '').trim() || '我的菜谱';
+    let candidate = `${clean}（自制）`;
+    let n = 2;
+    while (findDuplicateFoodByName(candidate)) {
+      candidate = `${clean}（自制${n}）`;
+      n++;
+    }
+    return candidate;
+  }
+
   function handleSaveCustomFood(e) {
     e.preventDefault();
     const name = dom.cfName.value.trim();
@@ -1111,7 +1169,7 @@
       showToast('请输入食物名称');
       return;
     }
-    if (isNaN(kcal) || kcal < 0) {
+    if (isNaN(kcal) || !Number.isFinite(kcal) || kcal < 0) {
       showToast('请输入有效的热量数值');
       return;
     }
@@ -1152,6 +1210,12 @@
       renderPlate();
       showToast(`✓ 已更新「${name}」`);
     } else {
+      const dup = findDuplicateFoodByName(name);
+      if (dup) {
+        showToast(`库内已有同名食物「${name}」，禁止覆盖，请复用或改名`);
+        dom.cfName.focus();
+        return;
+      }
       const newFood = {
         id: `custom_${Date.now()}`,
         name,
@@ -1170,6 +1234,12 @@
       state.customFoods.unshift(newFood);
       saveCustomFoods();
       closeCustomFoodSheet();
+
+      if (typeof state.customFoodCallback === 'function') {
+        const cb = state.customFoodCallback;
+        state.customFoodCallback = null;
+        cb(newFood);
+      }
 
       // 若当前在筛选无结果状态，切回全部方便用户看到新食物
       if (state.searchQuery.trim()) {
@@ -2164,6 +2234,391 @@
     showToast(`📖 已保存菜谱「${name}」（整份 ${t.totalKcal} kcal）`);
   }
 
+  // ==================== Sheet 5：📝 文本离线导入菜谱 ====================
+  function openTextImportSheet() {
+    dom.tiStepInput.classList.remove('hidden');
+    dom.tiInputFooter.classList.remove('hidden');
+    dom.tiStepReview.classList.add('hidden');
+    dom.tiReviewFooter.classList.add('hidden');
+    showSheet(dom.textImportBackdrop, dom.textImportSheet);
+  }
+
+  function closeTextImportSheet() {
+    hideSheet(dom.textImportBackdrop, dom.textImportSheet);
+  }
+
+  function getTextImportPendingItems() {
+    return state.textImport.items.filter(
+      (it) => it.checked && !it.ignoredZeroCal && (it.status === 'unmatched' || it.status === 'needs_weight')
+    );
+  }
+
+  function calcTextImportTotals() {
+    let totalGrams = 0;
+    let totalKcal = 0;
+    let totalCarbs = 0;
+    let totalProtein = 0;
+    let totalFat = 0;
+
+    state.textImport.items.forEach((it) => {
+      if (!it.checked || it.ignoredZeroCal || it.status !== 'matched' || !it.food || !it.grams || it.grams <= 0) return;
+      const nut = calcNutrition(it.food, it.grams);
+      totalGrams += it.grams;
+      totalKcal += nut.kcal;
+      totalCarbs += nut.carbs;
+      totalProtein += nut.protein;
+      totalFat += nut.fat;
+    });
+
+    const kcalPer100g = totalGrams > 0 ? Math.round((totalKcal / totalGrams) * 100) : 0;
+    return {
+      totalGrams: Math.round(totalGrams),
+      totalKcal: Math.round(totalKcal),
+      totalCarbs: +totalCarbs.toFixed(1),
+      totalProtein: +totalProtein.toFixed(1),
+      totalFat: +totalFat.toFixed(1),
+      kcalPer100g,
+      carbsPer100g: totalGrams > 0 ? +((totalCarbs / totalGrams) * 100).toFixed(1) : 0,
+      proteinPer100g: totalGrams > 0 ? +((totalProtein / totalGrams) * 100).toFixed(1) : 0,
+      fatPer100g: totalGrams > 0 ? +((totalFat / totalGrams) * 100).toFixed(1) : 0
+    };
+  }
+
+  function updateTextImportSummary() {
+    const t = calcTextImportTotals();
+    const pending = getTextImportPendingItems();
+    const unmatchedCount = state.textImport.items.filter((it) => it.checked && !it.ignoredZeroCal && it.status === 'unmatched').length;
+
+    dom.tiTotalKcal.textContent = t.totalKcal;
+    dom.tiSumSub.textContent = unmatchedCount > 0
+      ? `总重 ${t.totalGrams}g · 折合 ${t.kcalPer100g} kcal/100g（尚未含 ${unmatchedCount} 项未匹配原料）`
+      : `总重 ${t.totalGrams}g · 折合 ${t.kcalPer100g} kcal/100g`;
+    dom.tiTotalCarbs.textContent = t.totalCarbs;
+    dom.tiTotalProtein.textContent = t.totalProtein;
+    dom.tiTotalFat.textContent = t.totalFat;
+
+    const blocked = pending.length > 0;
+    dom.tiBlockerHint.classList.toggle('hidden', !blocked);
+    if (blocked) {
+      dom.tiBlockerHint.textContent = `还有 ${pending.length} 项原料/用量待确认（未处理前禁止保存）`;
+    }
+    dom.tiBtnSaveRecipe.disabled = blocked;
+    dom.tiBtnSaveAndPlate.disabled = blocked;
+    dom.tiBtnBatchPlate.disabled = blocked;
+    dom.tiBtnMergeRecipe.disabled = blocked;
+  }
+
+  function renderTextImportReview() {
+    const { mode, items } = state.textImport;
+    const isDishList = mode === 'dish_list';
+
+    dom.tiModeBadge.textContent = isDishList ? '🍽️ 纯菜名清单模式' : '📖 配方菜谱模式';
+    dom.tiRecipeMeta.classList.toggle('hidden', isDishList);
+    dom.tiRecipeActions.classList.toggle('hidden', isDishList);
+    dom.tiDishlistActions.classList.toggle('hidden', !isDishList);
+
+    const matchedItems = items.filter((it) => it.status === 'matched' && !it.ignoredZeroCal);
+    const needsWeightItems = items.filter((it) => it.status === 'needs_weight' && !it.ignoredZeroCal);
+    const unmatchedItems = items.filter((it) => it.status === 'unmatched' && !it.ignoredZeroCal);
+    const ignoredItems = items.filter((it) => it.ignoredZeroCal);
+
+    let html = '';
+
+    if (matchedItems.length > 0) {
+      const title = isDishList
+        ? `🟢 菜品清单预览（${matchedItems.length} 项 · 按库内常见份量，可逐项改克数）`
+        : `🟢 已匹配且用量明确（${matchedItems.length} 项）`;
+      html += `<div class="ti-sec-title green">${title}</div>`;
+      html += matchedItems.map((it) => {
+        const nut = calcNutrition(it.food, it.grams || 0);
+        const candBtns = (it.candidates || []).length > 1
+          ? it.candidates.map((c) => `
+              <button type="button" class="ti-mini-btn" data-ti-cand="${it.uid}" data-food-id="${c.id}">
+                ${c.id === it.food.id ? '✓ ' : ''}${escapeHTML(c.name)}
+              </button>
+            `).join('')
+          : '';
+        return `
+          <div class="ti-item-card" data-ti-uid="${it.uid}">
+            <div class="ti-item-head">
+              ${isDishList ? `<input type="checkbox" class="recipe-ing-check" data-ti-check="${it.uid}" ${it.checked ? 'checked' : ''} />` : ''}
+              <div class="ti-item-main">
+                <div class="ti-item-title">${it.food.emoji} ${escapeHTML(it.food.name)} <span style="font-weight:400;color:var(--secondary-label);font-size:12px;">← ${escapeHTML(it.raw)}</span></div>
+                <div class="ti-item-sub">${escapeHTML(it.basis)} · <strong data-ti-nut="${it.uid}">${nut.kcal} kcal / 蛋 ${nut.protein}g</strong></div>
+              </div>
+              <div class="recipe-ing-grams">
+                <input type="number" inputmode="decimal" min="1" max="5000" value="${it.grams}" data-ti-grams="${it.uid}" />
+                <span>g</span>
+              </div>
+            </div>
+            <div class="ti-item-actions">
+              ${candBtns}
+              <button type="button" class="ti-mini-btn" data-ti-pick="${it.uid}">🔍 换食物</button>
+              ${isDishList ? `<button type="button" class="ti-mini-btn danger" data-ti-remove="${it.uid}">移除</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    if (needsWeightItems.length > 0) {
+      html += `<div class="ti-sec-title yellow">🟡 用量待确认（${needsWeightItems.length} 项 · 绝不静默瞎猜）</div>`;
+      html += needsWeightItems.map((it) => `
+        <div class="ti-item-card yellow" data-ti-uid="${it.uid}">
+          <div class="ti-item-head">
+            <div class="ti-item-main">
+              <div class="ti-item-title">${it.food.emoji} ${escapeHTML(it.food.name)} <span style="font-weight:400;color:var(--secondary-label);font-size:12px;">← ${escapeHTML(it.raw)}</span></div>
+              <div class="ti-item-sub">${escapeHTML(it.basis)}</div>
+            </div>
+          </div>
+          <div class="ti-item-actions">
+            ${[5, 10, 15, 30, 50, 100].map((g) => `
+              <button type="button" class="ti-mini-btn warn" data-ti-quickg="${it.uid}" data-g="${g}">${g}g</button>
+            `).join('')}
+            <div class="recipe-ing-grams">
+              <input type="number" inputmode="decimal" min="1" max="5000" placeholder="克数" data-ti-manualg="${it.uid}" />
+              <button type="button" class="ti-mini-btn" data-ti-applyg="${it.uid}">确认</button>
+            </div>
+            ${it.isZeroCalSeasoning ? `<button type="button" class="ti-mini-btn" data-ti-ignore="${it.uid}">0 卡忽略</button>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    if (unmatchedItems.length > 0) {
+      html += `<div class="ti-sec-title red">🔴 未匹配原料（${unmatchedItems.length} 项 · 必须显式处理）</div>`;
+      html += unmatchedItems.map((it) => `
+        <div class="ti-item-card red" data-ti-uid="${it.uid}">
+          <div class="ti-item-head">
+            <div class="ti-item-main">
+              <div class="ti-item-title">❓ ${escapeHTML(it.rawName)} ${it.grams ? `<span style="color:var(--ios-blue);font-size:12px;">(${it.grams}g)</span>` : ''}</div>
+              <div class="ti-item-sub">${escapeHTML(it.basis)}</div>
+            </div>
+          </div>
+          <div class="ti-item-actions">
+            <button type="button" class="ti-mini-btn" data-ti-pick="${it.uid}">🔍 手动指认</button>
+            <button type="button" class="ti-mini-btn" data-ti-create="${it.uid}">＋ 新建食物</button>
+            <button type="button" class="ti-mini-btn" data-ti-ignore="${it.uid}">设为 0 卡忽略</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    if (ignoredItems.length > 0) {
+      html += `<div class="ti-sec-title" style="color:var(--secondary-label);">⚪ 已确认 0 卡忽略（${ignoredItems.length} 项）</div>`;
+      html += ignoredItems.map((it) => `
+        <div class="ti-item-card ignored" data-ti-uid="${it.uid}">
+          <div class="ti-item-head">
+            <div class="ti-item-main">
+              <div class="ti-item-title">${escapeHTML(it.rawName)}（已忽略 · 0 kcal）</div>
+            </div>
+            <button type="button" class="ti-mini-btn" data-ti-unignore="${it.uid}">撤销</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    if (!html) {
+      html = '<p style="text-align:center;color:var(--secondary-label);padding:20px 0;">未解析出有效原料，请返回检查文本。</p>';
+    }
+
+    dom.tiSectionsContainer.innerHTML = html;
+    updateTextImportSummary();
+  }
+
+  function runTextImportParse() {
+    const raw = dom.tiInputText.value.trim();
+    if (!raw) {
+      showToast('请先粘贴或输入菜谱文本');
+      dom.tiInputText.focus();
+      return;
+    }
+    if (!window.RecipeParser) {
+      showToast('离线解析模块未加载');
+      return;
+    }
+    const parsed = window.RecipeParser.parseText(raw, getAllFoods());
+    if (!parsed.items || parsed.items.length === 0) {
+      showToast('未能识别出原料或菜品，请检查文本格式');
+      return;
+    }
+
+    state.textImport = parsed;
+    dom.tiRecipeName.value = parsed.recipeName || '';
+    dom.tiUnitName.value = '1盘';
+    dom.tiCategory.value = 'dish';
+    dom.tiEmoji.value = '🍳';
+
+    dom.tiStepInput.classList.add('hidden');
+    dom.tiInputFooter.classList.add('hidden');
+    dom.tiStepReview.classList.remove('hidden');
+    dom.tiReviewFooter.classList.remove('hidden');
+
+    renderTextImportReview();
+  }
+
+  function openManualPickModal(uid) {
+    const item = state.textImport.items.find((x) => x.uid === uid);
+    if (!item) return;
+
+    const allFoods = getAllFoods();
+    const renderPickList = (q) => {
+      const kw = String(q || '').trim().toLowerCase();
+      const list = kw
+        ? allFoods.filter((f) => f.name.toLowerCase().includes(kw) || (f.alias || '').toLowerCase().includes(kw)).slice(0, 30)
+        : allFoods.slice(0, 20);
+      return list.map((f) => `
+        <div class="ti-pick-row" data-pick-food="${f.id}">
+          <span>${f.emoji} ${escapeHTML(f.name)}</span>
+          <span style="color:var(--secondary-label);font-size:12px;">${f.kcal} kcal/100g</span>
+        </div>
+      `).join('') || '<div style="padding:12px;text-align:center;color:var(--secondary-label);">未找到匹配食物</div>';
+    };
+
+    openModal({
+      title: `为「${item.rawName}」指认食物`,
+      html: `
+        <input id="ti-pick-search" class="ios-input" type="search" placeholder="输入关键字搜索 1,884+ 食物库..." value="${escapeHTML(item.rawName)}" />
+        <div id="ti-pick-results" class="ti-pick-list">${renderPickList(item.rawName)}</div>
+      `,
+      actions: [{ text: '取消', cls: 'cancel' }]
+    });
+
+    const searchInp = $('#ti-pick-search');
+    const resultsBox = $('#ti-pick-results');
+    if (searchInp && resultsBox) {
+      searchInp.addEventListener('input', () => {
+        resultsBox.innerHTML = renderPickList(searchInp.value);
+      });
+      resultsBox.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-pick-food]');
+        if (!row) return;
+        const food = getFoodById(row.dataset.pickFood);
+        if (!food) return;
+        item.food = food;
+        item.ignoredZeroCal = false;
+        if (item.grams && item.grams > 0) {
+          item.status = 'matched';
+          item.basis = `已手动指认为「${food.name}」`;
+        } else if (state.textImport.mode === 'dish_list') {
+          item.grams = food.unitGrams || 100;
+          item.status = 'matched';
+          item.basis = `按常见份量（${food.unitName || `${item.grams}g`}）`;
+        } else {
+          item.status = 'needs_weight';
+          item.basis = `已指认「${food.name}」，请填写克数`;
+        }
+        closeModal();
+        renderTextImportReview();
+      });
+    }
+  }
+
+  function commitParsedRecipe(name, alsoAddToPlate) {
+    const activeIngs = state.textImport.items.filter(
+      (it) => it.checked && !it.ignoredZeroCal && it.status === 'matched' && it.food && it.grams > 0
+    );
+    if (activeIngs.length === 0) {
+      showToast('请至少保留一项有效原料');
+      return;
+    }
+
+    const t = calcTextImportTotals();
+    const unitName = dom.tiUnitName.value.trim() || '1盘';
+    const category = dom.tiCategory.value || 'dish';
+    const emoji = dom.tiEmoji.value || '🍳';
+    const ingSummary = activeIngs
+      .map((x) => `${x.food.name.replace(/[（(][^）)]*[）)]/g, '')} ${Math.round(x.grams)}g`)
+      .join(' + ');
+
+    const newRecipe = {
+      id: `custom_recipe_${Date.now()}`,
+      name,
+      alias: `菜谱 组合菜 文本导入 自定义 ${name} ${activeIngs.map((x) => x.food.name).join(' ')}`,
+      category,
+      emoji,
+      kcal: t.kcalPer100g,
+      carbs: t.carbsPer100g,
+      protein: t.proteinPer100g,
+      fat: t.fatPer100g,
+      unitName,
+      unitGrams: Math.max(1, t.totalGrams),
+      tip: `📖 文本导入菜谱（整份 ${t.totalGrams}g ≈ ${t.totalKcal} kcal）：${ingSummary}。支持按 0.5 份折算！`,
+      recipeIngredients: activeIngs.map((x) => ({
+        foodId: x.food.id,
+        name: x.food.name,
+        grams: Math.round(x.grams)
+      })),
+      isCustom: true,
+      isRecipe: true
+    };
+
+    state.customFoods.unshift(newRecipe);
+    saveCustomFoods();
+    if (alsoAddToPlate) {
+      addToPlate(newRecipe.id, newRecipe.unitGrams, newRecipe.unitName, getSmartDefaultMeal(), newRecipe);
+    }
+    closeTextImportSheet();
+    renderLookupList(true);
+    showToast(`📖 已保存菜谱「${name}」（整份 ${t.totalKcal} kcal）`);
+  }
+
+  function saveParsedRecipe(alsoAddToPlate = false) {
+    if (getTextImportPendingItems().length > 0) {
+      showToast('请先处理所有未匹配或待确认用量项');
+      return;
+    }
+    const name = dom.tiRecipeName.value.trim();
+    if (!name) {
+      showToast('请填写菜谱名称');
+      dom.tiRecipeName.focus();
+      return;
+    }
+
+    // Q5：重名禁止覆盖，弹窗提供跳过或改名另存（自动建议追加「（自制）」）
+    const dup = findDuplicateFoodByName(name);
+    if (dup) {
+      const suggested = suggestUniqueRecipeName(name);
+      openModal({
+        title: `库内已存在「${name}」`,
+        html: `<p style="margin:0;text-align:center;">为保护现有食物数据，不允许覆盖同名条目。你可以跳过保存，或自动改名为「${escapeHTML(suggested)}」另存。</p>`,
+        actions: [
+          { text: '跳过（不覆盖）', cls: 'cancel' },
+          {
+            text: `改名另存`,
+            onClick: () => {
+              dom.tiRecipeName.value = suggested;
+              commitParsedRecipe(suggested, alsoAddToPlate);
+            }
+          }
+        ]
+      });
+      return;
+    }
+
+    commitParsedRecipe(name, alsoAddToPlate);
+  }
+
+  function batchAddDishListToPlate() {
+    if (getTextImportPendingItems().length > 0) {
+      showToast('请先处理所有未匹配或待确认项');
+      return;
+    }
+    const active = state.textImport.items.filter(
+      (it) => it.checked && !it.ignoredZeroCal && it.status === 'matched' && it.food && it.grams > 0
+    );
+    if (active.length === 0) {
+      showToast('请至少勾选一道菜品');
+      return;
+    }
+    const meal = getSmartDefaultMeal();
+    active.forEach((it) => {
+      addToPlate(it.food.id, it.grams, it.unitLabel || `${Math.round(it.grams)}g`, meal, it.food);
+    });
+    closeTextImportSheet();
+    showToast(`✓ 已批量加入 ${active.length} 项到今日餐盘`);
+  }
+
   // ==================== JSON 导出 / 导入备份（含自定义食物与历史记录） ====================
   function buildBackupPayload() {
     return {
@@ -3017,6 +3472,182 @@
     });
 
     dom.btnConfirmSaveRecipe.addEventListener('click', saveRecipeToLibrary);
+    dom.btnRecipeToTextImport.addEventListener('click', () => {
+      closeRecipeSheet();
+      setTimeout(openTextImportSheet, 220);
+    });
+
+    // Sheet 5：文本离线导入
+    dom.btnTextImport.addEventListener('click', openTextImportSheet);
+    dom.textImportBackdrop.addEventListener('click', closeTextImportSheet);
+    dom.textImportCloseBtn.addEventListener('click', closeTextImportSheet);
+    dom.textImportGrabber.addEventListener('click', closeTextImportSheet);
+
+    dom.tiBtnPaste.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          dom.tiInputText.value = text;
+          showToast('✓ 已粘贴剪贴板文本');
+        } else {
+          showToast('剪贴板为空');
+        }
+      } catch {
+        showToast('请长按输入框直接粘贴');
+      }
+    });
+
+    dom.tiBtnSample.addEventListener('click', () => {
+      dom.tiInputText.value = '黑椒鸡胸炒西兰花\n原料：鸡胸肉 200g、西兰花 150克、橄榄油 1勺、生抽 1勺\n做法：鸡胸肉切丁腌制，热锅放油炒熟，加入焯水西兰花翻炒出锅。';
+    });
+
+    dom.tiBtnClear.addEventListener('click', () => {
+      dom.tiInputText.value = '';
+      dom.tiInputText.focus();
+    });
+
+    dom.tiBtnParse.addEventListener('click', runTextImportParse);
+
+    dom.tiBtnBackInput.addEventListener('click', () => {
+      dom.tiStepReview.classList.add('hidden');
+      dom.tiReviewFooter.classList.add('hidden');
+      dom.tiStepInput.classList.remove('hidden');
+      dom.tiInputFooter.classList.remove('hidden');
+    });
+
+    dom.tiSectionsContainer.addEventListener('change', (e) => {
+      const chk = e.target.closest('[data-ti-check]');
+      if (chk) {
+        const item = state.textImport.items.find((x) => x.uid === chk.dataset.tiCheck);
+        if (item) {
+          item.checked = chk.checked;
+          updateTextImportSummary();
+        }
+      }
+    });
+
+    dom.tiSectionsContainer.addEventListener('input', (e) => {
+      const inp = e.target.closest('[data-ti-grams]');
+      if (inp) {
+        const item = state.textImport.items.find((x) => x.uid === inp.dataset.tiGrams);
+        if (item && item.food) {
+          item.grams = Math.max(0, parseFloat(inp.value) || 0);
+          item.unitLabel = `${item.grams}g`;
+          const nut = calcNutrition(item.food, item.grams);
+          const nutEl = dom.tiSectionsContainer.querySelector(`[data-ti-nut="${item.uid}"]`);
+          if (nutEl) nutEl.textContent = `${nut.kcal} kcal / 蛋 ${nut.protein}g`;
+          updateTextImportSummary();
+        }
+      }
+    });
+
+    dom.tiSectionsContainer.addEventListener('click', (e) => {
+      const candBtn = e.target.closest('[data-ti-cand]');
+      if (candBtn) {
+        const item = state.textImport.items.find((x) => x.uid === candBtn.dataset.tiCand);
+        const food = getFoodById(candBtn.dataset.foodId);
+        if (item && food) {
+          item.food = food;
+          renderTextImportReview();
+        }
+        return;
+      }
+
+      const pickBtn = e.target.closest('[data-ti-pick]');
+      if (pickBtn) {
+        openManualPickModal(pickBtn.dataset.tiPick);
+        return;
+      }
+
+      const createBtn = e.target.closest('[data-ti-create]');
+      if (createBtn) {
+        const item = state.textImport.items.find((x) => x.uid === createBtn.dataset.tiCreate);
+        if (!item) return;
+        state.customFoodCallback = (newFood) => {
+          item.food = newFood;
+          item.ignoredZeroCal = false;
+          if (item.grams && item.grams > 0) {
+            item.status = 'matched';
+            item.basis = `已新建食物「${newFood.name}」`;
+          } else {
+            item.status = 'needs_weight';
+            item.basis = `已新建「${newFood.name}」，请填写克数`;
+          }
+          renderTextImportReview();
+        };
+        openCustomFoodSheet({ name: item.rawName });
+        return;
+      }
+
+      const quickBtn = e.target.closest('[data-ti-quickg]');
+      if (quickBtn) {
+        const item = state.textImport.items.find((x) => x.uid === quickBtn.dataset.tiQuickg);
+        const g = Number(quickBtn.dataset.g);
+        if (item && g > 0) {
+          item.grams = g;
+          item.unitLabel = `${g}g`;
+          item.status = 'matched';
+          item.basis = `已手动确认 ${g}g`;
+          renderTextImportReview();
+        }
+        return;
+      }
+
+      const applyBtn = e.target.closest('[data-ti-applyg]');
+      if (applyBtn) {
+        const uid = applyBtn.dataset.tiApplyg;
+        const inp = dom.tiSectionsContainer.querySelector(`[data-ti-manualg="${uid}"]`);
+        const g = inp ? parseFloat(inp.value) : 0;
+        if (!g || g <= 0) {
+          showToast('请输入有效克数');
+          return;
+        }
+        const item = state.textImport.items.find((x) => x.uid === uid);
+        if (item) {
+          item.grams = g;
+          item.unitLabel = `${g}g`;
+          item.status = 'matched';
+          item.basis = `已手动确认 ${g}g`;
+          renderTextImportReview();
+        }
+        return;
+      }
+
+      const ignoreBtn = e.target.closest('[data-ti-ignore]');
+      if (ignoreBtn) {
+        const item = state.textImport.items.find((x) => x.uid === ignoreBtn.dataset.tiIgnore);
+        if (item) {
+          item.ignoredZeroCal = true;
+          renderTextImportReview();
+        }
+        return;
+      }
+
+      const unignoreBtn = e.target.closest('[data-ti-unignore]');
+      if (unignoreBtn) {
+        const item = state.textImport.items.find((x) => x.uid === unignoreBtn.dataset.tiUnignore);
+        if (item) {
+          item.ignoredZeroCal = false;
+          renderTextImportReview();
+        }
+        return;
+      }
+
+      const removeBtn = e.target.closest('[data-ti-remove]');
+      if (removeBtn) {
+        state.textImport.items = state.textImport.items.filter((x) => x.uid !== removeBtn.dataset.tiRemove);
+        renderTextImportReview();
+      }
+    });
+
+    dom.tiBtnSaveRecipe.addEventListener('click', () => saveParsedRecipe(false));
+    dom.tiBtnSaveAndPlate.addEventListener('click', () => saveParsedRecipe(true));
+    dom.tiBtnBatchPlate.addEventListener('click', batchAddDishListToPlate);
+    dom.tiBtnMergeRecipe.addEventListener('click', () => {
+      state.textImport.mode = 'recipe';
+      dom.tiRecipeName.value = dom.tiRecipeName.value || '我的组合菜谱';
+      renderTextImportReview();
+    });
 
     // Modal
     dom.modalBackdrop.addEventListener('click', (e) => {
