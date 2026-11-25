@@ -2,7 +2,7 @@
   'use strict';
 
   // ==================== 持久化 Key ====================
-  const APP_VERSION = 'v1.8.0';
+  const APP_VERSION = 'v1.8.1';
   const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
   const GEMINI_FALLBACK_MODELS = [
     'gemini-4-hydrogen',

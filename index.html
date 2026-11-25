@@ -33,12 +33,15 @@
         <div class="header-top-row">
           <h1 class="large-title">热量速查</h1>
           <div class="header-actions">
-            <button id="btn-text-import" class="header-pill-btn primary-tint" title="文本离线导入菜谱">📝 导入</button>
-            <button id="btn-add-custom" class="header-pill-btn primary-tint" title="添加自定义食物">＋ 添加</button>
             <button id="btn-backup" class="header-icon-btn" title="JSON 导出/导入备份" aria-label="数据备份">💾</button>
             <button id="btn-legend" class="header-icon-btn" title="红绿灯说明" aria-label="红绿灯说明">🚦</button>
             <button id="btn-theme" class="header-icon-btn" title="切换浅色/深色模式" aria-label="切换主题">🌓</button>
           </div>
+        </div>
+
+        <div class="header-quick-actions">
+          <button id="btn-text-import" class="header-pill-btn primary-tint" title="文本离线导入菜谱">📝 导入</button>
+          <button id="btn-add-custom" class="header-pill-btn primary-tint" title="添加自定义食物">＋ 添加</button>
         </div>
 
         <!-- 原生风格搜索框 + 拍照识图入口 -->
@@ -51,7 +54,7 @@
             <input
               id="search-input"
               type="search"
-              placeholder="搜食物/品牌/场景，如 瑞幸、麦当劳、高蛋白"
+              placeholder="搜食物、品牌或场景"
               autocomplete="off"
               autocorrect="off"
               spellcheck="false"
