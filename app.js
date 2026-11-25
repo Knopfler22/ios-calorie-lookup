@@ -1414,7 +1414,9 @@
 
   function runNativeOCR(base64) {
     return new Promise((resolve) => {
-      if (!window.__IOS_NATIVE_OCR__ || !window.webkit?.messageHandlers?.nativeOCR) {
+      const hasIOSOCR = Boolean(window.__IOS_NATIVE_OCR__ && window.webkit?.messageHandlers?.nativeOCR);
+      const hasAndroidOCR = Boolean(window.__ANDROID_NATIVE_OCR__ && window.AndroidBridge?.runNativeOCR);
+      if (!hasIOSOCR && !hasAndroidOCR) {
         resolve({ lines: [], unsupported: true });
         return;
       }
@@ -1430,7 +1432,11 @@
       });
 
       try {
-        window.webkit.messageHandlers.nativeOCR.postMessage({ requestId, base64 });
+        if (hasIOSOCR) {
+          window.webkit.messageHandlers.nativeOCR.postMessage({ requestId, base64 });
+        } else {
+          window.AndroidBridge.runNativeOCR(requestId, base64);
+        }
       } catch {
         clearTimeout(timer);
         pendingOCRRequests.delete(requestId);
@@ -1541,7 +1547,7 @@
       portionGrams,
       tip: `已离线提取包装营养成分表（原始能量 ${energyOrig} → ${kcalPer100g} kcal/100${isLiquid ? 'ml' : 'g'}），点「存入食物库」可改名永久保存。`,
       _isOffline: true,
-      _sourceLabel: '⚡ iPhone 本地离线 OCR 识别'
+      _sourceLabel: window.__ANDROID_NATIVE_APP__ ? '⚡ 本机离线 OCR 识别' : '⚡ iPhone 本地离线 OCR 识别'
     };
   }
 
@@ -1718,8 +1724,8 @@
     dom.cameraScanningOverlay.classList.remove('hidden');
 
     try {
-      // 1. 优先尝试 iPhone 原生离线 OCR 识别「营养成分表」（0.2秒秒出，永不堵车）
-      if (!forceCloud && window.__IOS_NATIVE_OCR__) {
+      // 1. 优先尝试原生离线 OCR 识别「营养成分表」（0.2秒秒出，永不堵车）
+      if (!forceCloud && (window.__IOS_NATIVE_OCR__ || window.__ANDROID_NATIVE_OCR__)) {
         dom.cameraScanText.textContent = '⚡ 离线扫描营养成分表中...';
         const ocrRes = await runNativeOCR(base64);
         const parsedLabel = parseNutritionLabelOCR(ocrRes.lines);
@@ -2723,6 +2729,18 @@
     });
 
     $('#btn-export-download')?.addEventListener('click', () => {
+      if (window.AndroidBridge?.exportJsonFile) {
+        const reqId = `exp_${Date.now()}`;
+        window.__onNativeExportResult = (res) => {
+          if (res && res.success) {
+            showToast(`📤 已保存 ${res.displayName || 'JSON 备份'}`);
+          } else if (res && res.error && res.error !== 'cancelled') {
+            showToast(`导出失败：${res.error}`);
+          }
+        };
+        window.AndroidBridge.exportJsonFile(reqId, `qingka-backup-${getTodayStr()}.json`, jsonStr, 'save');
+        return;
+      }
       const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -3662,11 +3680,11 @@
 
   // ==================== PWA & iOS Safari 安装提示 ====================
   function initPWA() {
-    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    const isNativeWrapper = Boolean(window.__IOS_NATIVE_APP__ || window.__ANDROID_NATIVE_APP__) || location.protocol === 'file:';
+    if (!isNativeWrapper && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
 
-    const isNativeWrapper = Boolean(window.__IOS_NATIVE_APP__) || location.protocol === 'file:';
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
     const dismissed = localStorage.getItem(STORAGE_KEYS.INSTALL_DISMISSED) === '1';
